@@ -2,9 +2,7 @@
 #include <string.h>
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_spiffs.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include <arpa/inet.h>
 #include <vector>
 
@@ -18,58 +16,23 @@ extern "C"
   void app_main(void);
 }
 
-static const char *files[] = {
-    "/spiffs/Xwing.ild.gz",
-    "/spiffs/LemmTumble.ild.gz",
-    "/spiffs/Vader.ild.gz",
-    "/spiffs/Enterprise2.ild.gz"};
-static const int num_files = 4;
-
 void app_main()
 {
-  vTaskDelay(2000 / portTICK_PERIOD_MS);
-
-  esp_vfs_spiffs_conf_t conf = {
-      .base_path = "/spiffs",
-      .partition_label = NULL,
-      .max_files = 5,
-      .format_if_mount_failed = false};
-
-  esp_err_t ret = esp_vfs_spiffs_register(&conf);
-
-  if (ret != ESP_OK)
-  {
-    if (ret == ESP_FAIL)
-    {
-      ESP_LOGE(TAG, "Failed to mount or format filesystem");
-    }
-    else if (ret == ESP_ERR_NOT_FOUND)
-    {
-      ESP_LOGE(TAG, "Failed to find SPIFFS partition");
-    }
-    else
-    {
-      ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
-    }
-    return;
+  ESP_LOGD(TAG, "Starting up...");
+  
+    int X_MIN = 0;
+  int X_MAX = 30000;
+  int Y_MIN = 0;
+  int Y_MAX = 30000;
+  int STEP = 1000; // Adjust based on your desired resolution
+  int tPixelDwelltime = 1;
+  int nFrames = 10;
+  SPIRenderer *renderer = new SPIRenderer(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames);
+  while (1){
+    tPixelDwelltime +=1;
+    renderer->setParameters(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames);
+    renderer->start();
   }
-  // read all the files in
-  std::vector<ILDAFile *> ilda_files;
-  for (int i = 0; i < num_files; i++)
-  {
-    ILDAFile *ilda = new ILDAFile();
-    ilda->read(files[i]);
-    ilda_files.push_back(ilda);
-    // feed the watchdog so we don't get a timeout
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-  }
-  esp_vfs_spiffs_unregister(NULL);
 
-  SPIRenderer *renderer = new SPIRenderer(ilda_files);
-  renderer->start();
-  // run forever
-  while (true)
-  {
-    vTaskDelay(600000 / portTICK_PERIOD_MS);
-  }
 }
+
