@@ -14,14 +14,42 @@ static const char *TAG = "Renderer";
 #define PIN_NUM_CS 27
 #define PIN_NUM_LDAC GPIO_NUM_33
 #define PIN_NUM_LASER GPIO_NUM_32
-#define PIN_NUM_CAMERA_TRIGGER GPIO_NUM_23
+#define PIN_NUM_TRIG_PIXEL GPIO_NUM_23
+#define PIN_NUM_TRIG_LINE GPIO_NUM_22
+#define PIN_NUM_TRIG_FRAME GPIO_NUM_21
+
+
+void set_gpio_pins(int pixelTrigVal, int lineTrigVal, int frameTrigVal) {
+    uint32_t gpio_mask = (
+        (1ULL << PIN_NUM_TRIG_PIXEL) |
+        (1ULL << PIN_NUM_TRIG_LINE) |
+        (1ULL << PIN_NUM_TRIG_FRAME)
+    );
+
+    gpio_config_t io_conf;
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = gpio_mask;
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    gpio_config(&io_conf);
+
+    if (pixelTrigVal) GPIO.out_w1ts = (1ULL << PIN_NUM_TRIG_PIXEL);
+    else GPIO.out_w1tc = (1ULL << PIN_NUM_TRIG_PIXEL);
+
+    if (lineTrigVal) GPIO.out_w1ts = (1ULL << PIN_NUM_TRIG_LINE);
+    else GPIO.out_w1tc = (1ULL << PIN_NUM_TRIG_LINE);
+
+    if (frameTrigVal) GPIO.out_w1ts = (1ULL << PIN_NUM_TRIG_FRAME);
+    else GPIO.out_w1tc = (1ULL << PIN_NUM_TRIG_FRAME);
+}
 
 // Function to trigger the camera
-void trigger_camera(int tPixelDwelltime)
+void trigger_camera(int tPixelDwelltime, int triggerPin = PIN_NUM_TRIG_PIXEL)
 {
-  gpio_set_level(PIN_NUM_CAMERA_TRIGGER, 1); // Set high
+  gpio_set_level((gpio_num_t)triggerPin, 1); // Set high
   ets_delay_us(tPixelDwelltime);             // Delay for 10us (adjust based on your camera's requirements)
-  gpio_set_level(PIN_NUM_CAMERA_TRIGGER, 0); // Set low
+  gpio_set_level((gpio_num_t)triggerPin, 0); // Set low
 }
 
 // void IRAM_ATTR SPIRenderer::draw() {
@@ -32,12 +60,16 @@ void SPIRenderer::draw()
   {
     printf("Drawing %d\n out of %d", iFrame, nFrames);
     printf("X_MIN %d\n, X_MAX %d\n, Y_MIN %d\n, Y_MAX %d\n, STEP %d\n", X_MIN, X_MAX, Y_MIN, Y_MAX, STEP);
+
+    // set all trigger high at the same time
+    set_gpio_pins(1,1,1); 
     for (int x = X_MIN; x <= X_MAX; x += STEP)
     {
+      set_gpio_pins(1,1,1); 
       for (int y = Y_MIN; y <= Y_MAX; y += STEP)
       {
         // Perform the scanning by setting x and y positions
-
+        set_gpio_pins(1,0,1); 
         // Convert x, y to DAC values as needed
         int dacX = 2048 + (x * 1024) / 32768;
         int dacY = 2048 + (y * 1024) / 32768;
@@ -66,10 +98,11 @@ void SPIRenderer::draw()
 
         // Trigger the camera for each position
         int tTriggerTime = 1; // 10us trigger time
-        trigger_camera(tTriggerTime);
-        // Add a small delay if needed to stabilize the position before capturing
+        trigger_camera(tTriggerTime,PIN_NUM_TRIG_PIXEL);
+        set_gpio_pins(1,0,0); 
       }
     }
+    set_gpio_pins(0,0,0); 
   }
 }
 
@@ -88,7 +121,7 @@ SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax, int step, int t
 
   // setup the laser
   gpio_set_direction(PIN_NUM_LASER, GPIO_MODE_OUTPUT);
-  gpio_set_direction(PIN_NUM_CAMERA_TRIGGER, GPIO_MODE_OUTPUT);
+  gpio_set_direction(PIN_NUM_TRIG_PIXEL, GPIO_MODE_OUTPUT);
 
   // setup the LDAC output
   gpio_set_direction(PIN_NUM_LDAC, GPIO_MODE_OUTPUT);
