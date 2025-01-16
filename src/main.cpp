@@ -1,3 +1,4 @@
+#define IS_XIAO 1
 #include <stdio.h>
 #include <string.h>
 #include "esp_err.h"
@@ -5,8 +6,6 @@
 #include "freertos/FreeRTOS.h"
 #include <arpa/inet.h>
 #include <vector>
-
-#include "ILDAFile.h"
 #include "SPIRenderer.h"
 
 static const char *TAG = "main";
@@ -18,9 +17,10 @@ extern "C"
 
 void app_main()
 {
+  esp_log_level_set("gpio", ESP_LOG_WARN);
   ESP_LOGD(TAG, "Starting up...");
   
-    int X_MIN = 0;
+  int X_MIN = 0;
   int X_MAX = 30000;
   int Y_MIN = 0;
   int Y_MAX = 30000;

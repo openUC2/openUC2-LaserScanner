@@ -1,0 +1,5 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "ESP32LaserScanner")(type "KiCad")(uri "$(KIPRJMOD)/ESP32LaserScanner.pretty")(options "")(descr ""))
+  (lib (name "Seeed Studio Xiao")(type "KiCad")(uri "/Users/bene/Downloads/ESP32LaserScanner_1/Seeeduino XIAO KICAD")(options "")(descr ""))
+)

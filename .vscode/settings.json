@@ -1,6 +1,7 @@
 {
   "idf.adapterTargetName": "esp32",
   "files.associations": {
-    "*.cpp_i2c": "c"
+    "*.cpp_i2c": "c",
+    "vector": "cpp"
   }
 }
