@@ -1,6 +1,8 @@
 #include <cstring>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_log.h"
+
 #include "SPIRenderer.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
@@ -8,7 +10,36 @@
 #include "esp_err.h"
 #include "esp_log.h"
 
+// For fast GPIO toggling on ESP32-S3:
+#include "soc/gpio_struct.h" // Gives you GPIO.out_w1ts, etc.
+#include "hal/gpio_types.h"
+#include "esp_rom_sys.h" // For esp_rom_delay_us()
 
+static const char *TAG = "SPIRenderer";
+
+// Comment/uncomment if you want to compile for XIAO or not
+// #define IS_XIAO
+
+////////////////////////////////////////////////////////////////
+// Helper: Fast toggling of GPIO pins
+////////////////////////////////////////////////////////////////
+#ifndef IS_XIAO
+static inline void fast_gpio_set(int pin)
+{
+  // For GPIO pin < 32 on ESP32-S3:
+  GPIO.out_w1ts.val = (1U << pin);
+}
+
+static inline void fast_gpio_clear(int pin)
+{
+  // For GPIO pin < 32 on ESP32-S3:
+  GPIO.out_w1tc.val = (1U << pin);
+}
+#endif
+
+////////////////////////////////////////////////////////////////
+// Set pixel/line/frame trigger pins
+////////////////////////////////////////////////////////////////
 
 void set_gpio_pins(int pixelTrigVal, int lineTrigVal, int frameTrigVal)
 {
@@ -69,162 +100,196 @@ void set_gpio_pins(int pixelTrigVal, int lineTrigVal, int frameTrigVal)
 #endif
 }
 
-// Function to trigger the camera
+////////////////////////////////////////////////////////////////
+// Trigger camera for tPixelDwelltime microseconds
+////////////////////////////////////////////////////////////////
 void trigger_camera(int tPixelDwelltime, int triggerPin = PIN_NUM_TRIG_PIXEL)
 {
-  #ifdef IS_XIAO
-   gpio_set_level((gpio_num_t)triggerPin, 1); // Set high
-  esp_rom_delay_us(tPixelDwelltime);         // Delay for tPixelDwelltime us
-  gpio_set_level((gpio_num_t)triggerPin, 0); // Set low
-  #else
-  gpio_set_level((gpio_num_t)triggerPin, 1); // Set high
-  ets_delay_us(tPixelDwelltime);             // Delay for 10us (adjust based on your camera's requirements)
-  gpio_set_level((gpio_num_t)triggerPin, 0); // Set low
-  #endif 
+#ifdef IS_XIAO
+  gpio_set_level((gpio_num_t)triggerPin, 1);
+  esp_rom_delay_us(tPixelDwelltime);
+  gpio_set_level((gpio_num_t)triggerPin, 0);
+#else
+  // On ESP32-S3, optionally do direct register toggling
+  GPIO.out_w1ts.val = (1U << triggerPin); // set bit
+  esp_rom_delay_us(tPixelDwelltime);
+  GPIO.out_w1tc.val = (1U << triggerPin); // clear bit
+#endif
 }
 
-// void IRAM_ATTR SPIRenderer::draw() {
-void SPIRenderer::draw()
+////////////////////////////////////////////////////////////////
+// The SPIRenderer class
+////////////////////////////////////////////////////////////////
+SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax,
+                         int step, int tPixelDwelltime, int nFramesI)
 {
-  // Set the initial position
-  for (int iFrame = 0; iFrame <= nFrames; iFrame++)
-  {
-    printf("Drawing %d\n out of %d", iFrame, nFrames);
-    printf("X_MIN %d\n, X_MAX %d\n, Y_MIN %d\n, Y_MAX %d\n, STEP %d\n", X_MIN, X_MAX, Y_MIN, Y_MAX, STEP);
+  // Avoid variable shadowing:
+  this->tPixelDwelltime = tPixelDwelltime;
 
-    // set all trigger high at the same time
-    set_gpio_pins(1, 1, 1);
-    for (int x = X_MIN; x <= X_MAX; x += STEP)
-    {
-      set_gpio_pins(1, 1, 1);
-      for (int y = Y_MIN; y <= Y_MAX; y += STEP)
-      {
-        // Perform the scanning by setting x and y positions
-        set_gpio_pins(1, 0, 1);
-        // Convert x, y to DAC values as needed
-        int dacX = 2048 + (x * 1024) / 32768;
-        int dacY = 2048 + (y * 1024) / 32768;
-
-        // SPI transaction for channel A (X-axis)
-        spi_transaction_t t1 = {};
-        t1.length = 16;
-        t1.flags = SPI_TRANS_USE_TXDATA;
-        t1.tx_data[0] = 0b11010000 | ((dacX >> 8) & 0xF);
-        t1.tx_data[1] = dacX & 255;
-
-        spi_device_polling_transmit(spi, &t1);
-
-        // SPI transaction for channel B (Y-axis)
-        spi_transaction_t t2 = {};
-        t2.length = 16;
-        t2.flags = SPI_TRANS_USE_TXDATA;
-        t2.tx_data[0] = 0b01010000 | ((dacY >> 8) & 0xF);
-        t2.tx_data[1] = dacY & 255;
-        printf("x/y %d %d and X/Y to draw %d %d\n", x, y, dacX, dacY);
-        spi_device_polling_transmit(spi, &t2);
-
-        // Load the DAC
-        gpio_set_level(PIN_NUM_LDAC, 0);
-        gpio_set_level(PIN_NUM_LDAC, 1);
-
-        // Trigger the camera for each position
-        int tTriggerTime = 1; // 10us trigger time
-        trigger_camera(tTriggerTime, PIN_NUM_TRIG_PIXEL);
-        set_gpio_pins(1, 0, 0);
-      }
-    }
-    set_gpio_pins(0, 0, 0);
-  }
-}
-
-SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax, int step, int tPixelDwelltime, int nFramesI)
-{
+  // The number of steps in x and y
   nX = (xmax - xmin) / step;
   nY = (ymax - ymin) / step;
-  tPixelDwelltime = tPixelDwelltime;
+
   X_MIN = xmin;
   X_MAX = xmax;
   Y_MIN = ymin;
   Y_MAX = ymax;
   STEP = step;
   nFrames = nFramesI;
-  printf("Setting up renderer with parameters: %d %d %d %d %d %d %d\n", xmin, xmax, ymin, ymax, step, tPixelDwelltime, nFrames);
 
-  // setup the laser
-  gpio_set_direction(PIN_NUM_LASER, GPIO_MODE_OUTPUT);
-  gpio_set_direction(PIN_NUM_TRIG_PIXEL, GPIO_MODE_OUTPUT);
-  gpio_set_direction(PIN_NUM_TRIG_FRAME, GPIO_MODE_OUTPUT);
-  gpio_set_direction(PIN_NUM_TRIG_LINE, GPIO_MODE_OUTPUT);
+  printf("Setting up renderer with parameters: %d %d %d %d %d %d %d\n",
+         xmin, xmax, ymin, ymax, step, tPixelDwelltime, nFrames);
 
-  // setup the LDAC output
-  gpio_set_direction(PIN_NUM_LDAC, GPIO_MODE_OUTPUT);
+  // Set up the laser pin
+  gpio_set_direction((gpio_num_t)PIN_NUM_LASER, GPIO_MODE_OUTPUT);
+  // Set up trigger pins
+  gpio_set_direction((gpio_num_t)PIN_NUM_TRIG_PIXEL, GPIO_MODE_OUTPUT);
+  gpio_set_direction((gpio_num_t)PIN_NUM_TRIG_FRAME, GPIO_MODE_OUTPUT);
+  gpio_set_direction((gpio_num_t)PIN_NUM_TRIG_LINE, GPIO_MODE_OUTPUT);
 
-  // test the LDAC Pin by toggling it 
-  for ( int i = 0; i < 10; i++){
-    gpio_set_level(PIN_NUM_LDAC, 0);
-    // pause for 1 second
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-    gpio_set_level(PIN_NUM_LDAC, 1);
-    // pause for 1 second
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+  // Set up the LDAC output
+  gpio_set_direction((gpio_num_t)PIN_NUM_LDAC, GPIO_MODE_OUTPUT);
 
-
+  // Quick test of the LDAC pin
+  for (int i = 0; i < 2; i++)
+  {
+    gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 0);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 1);
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
-  // setup SPI output for CP4822
+
+  // SPI bus configuration
   esp_err_t ret;
   spi_bus_config_t buscfg = {
-      .mosi_io_num = PIN_NUM_SDI,  // was: PIN_NUM_SCK,
-      .miso_io_num = PIN_NUM_MISO, // was:PIN_NUM_MISO,
-      .sclk_io_num = PIN_NUM_SCK,  // was: PIN_NUM_SDI,
+      .mosi_io_num = PIN_NUM_SDI,
+      .miso_io_num = PIN_NUM_MISO,
+      .sclk_io_num = PIN_NUM_SCK,
       .quadwp_io_num = -1,
       .quadhd_io_num = -1,
-      .max_transfer_sz = 4096}; // was: 0
+      .max_transfer_sz = 4096};
+
   spi_device_interface_config_t devcfg = {
       .command_bits = 0,
       .address_bits = 0,
       .dummy_bits = 0,
       .mode = 0,
-      .clock_speed_hz = 20000000, // was 80000000
-      .spics_io_num = PIN_NUM_CS, // CS pin
+      .clock_speed_hz = 20 * 1000 * 1000, // 20 MHz
+      .spics_io_num = PIN_NUM_CS,
       .flags = SPI_DEVICE_NO_DUMMY,
       .queue_size = 2,
   };
-// Initialize the SPI bus
+
 #ifdef IS_XIAO
   ret = spi_bus_initialize(SPI3_HOST, &buscfg, SPI_DMA_CH_AUTO);
+  ESP_ERROR_CHECK(ret);
+
   ret = spi_bus_add_device(SPI3_HOST, &devcfg, &spi);
+  ESP_ERROR_CHECK(ret);
 #else
   ret = spi_bus_initialize(HSPI_HOST, &buscfg, 1);
-  ret = spi_bus_add_device(HSPI_HOST, &devcfg, &spi);
-#endif
-// Set the CS pin to low
-gpio_set_level(PIN_NUM_CS, 0);
+  ESP_ERROR_CHECK(ret);
 
-  assert(ret == ESP_OK);
-  // Attach the SPI device
-  printf("Error message %s\n", esp_err_to_name(ret));
-  // printf("Ret code is %d\n", ret);
-  // assert(ret == ESP_OK);
+  ret = spi_bus_add_device(HSPI_HOST, &devcfg, &spi);
+  ESP_ERROR_CHECK(ret);
+#endif
+
+  // If you want chip-select forced low all the time (not typically recommended),
+  // you can do:
+  gpio_set_level((gpio_num_t)PIN_NUM_CS, 0);
+
+  printf("SPI Bus init ret = %s\n", esp_err_to_name(ret));
 }
 
-void SPIRenderer::setParameters(int xmin, int xmax, int ymin, int ymax, int step, int tPixelDwelltime, int nFramesI)
+void SPIRenderer::setParameters(int xmin, int xmax, int ymin, int ymax,
+                                int step, int tPixelDwelltime, int nFramesI)
 {
+  // Again, fix shadowing
+  this->tPixelDwelltime = tPixelDwelltime;
+
   nX = (xmax - xmin) / step;
   nY = (ymax - ymin) / step;
-  tPixelDwelltime = tPixelDwelltime;
   X_MIN = xmin;
   X_MAX = xmax;
   Y_MIN = ymin;
   Y_MAX = ymax;
   STEP = step;
   nFrames = nFramesI;
-  printf("Setting up renderer with parameters: %d %d %d %d %d %d %d\n", xmin, xmax, ymin, ymax, step, tPixelDwelltime, nFrames);
+
+  printf("Setting up renderer with parameters: %d %d %d %d %d %d %d\n",
+         xmin, xmax, ymin, ymax, step, tPixelDwelltime, nFrames);
 }
 
+////////////////////////////////////////////////////////////////
+// The main draw function
+////////////////////////////////////////////////////////////////
+void SPIRenderer::draw()
+{
+  // Outer loop: frames
+  for (int iFrame = 0; iFrame < nFrames; iFrame++)
+  {
+    printf("Drawing frame %d of %d\n", iFrame + 1, nFrames);
+    printf("X_MIN %d, X_MAX %d, Y_MIN %d, Y_MAX %d, STEP %d\n",
+           X_MIN, X_MAX, Y_MIN, Y_MAX, STEP);
+
+    // Example: set all triggers high at the start of a frame
+    // pixelTrigVal, lineTrigVal, frameTrigVal
+    set_gpio_pins(1, 1, 1);
+
+    // Loop over X
+    for (int dacX = X_MIN; dacX <= X_MAX; dacX += STEP)
+    {
+
+      // Loop over Y
+      for (int dacY = Y_MIN; dacY <= Y_MAX; dacY += STEP)
+      {
+        set_gpio_pins(0, 0, 0);
+
+        //ESP_LOGI(TAG, "Drawing pixel at %d %d", dacX, dacY);
+
+        // SPI transaction for channel A (X-axis)
+        spi_transaction_t t1 = {};
+        t1.length = 16; // 16 bits
+        t1.flags = SPI_TRANS_USE_TXDATA;
+        t1.tx_data[0] = (0b00110000 | ((dacX >> 8) & 0x0F)); // Bit 5 = 1 (Gain = 1)
+        t1.tx_data[1] = (dacX & 0xFF);
+
+        // SPI transaction for channel B (Y-axis)
+        spi_transaction_t t2 = {};
+        t2.length = 16;
+        t2.flags = SPI_TRANS_USE_TXDATA;
+        t2.tx_data[0] = (0b10110000 | ((dacY >> 8) & 0x0F)); // Bit 5 = 1 (Gain = 1)
+        t2.tx_data[1] = (dacY & 0xFF);
+
+        // Latch the DAC
+        gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 0);
+        gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 1);
+
+        gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 0); // Hold LDAC low
+        spi_device_polling_transmit(spi, &t1);       // Send X value
+        spi_device_polling_transmit(spi, &t2);       // Send Y value
+        gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 1); // Latch both channels
+
+        // Trigger the camera for each pixel
+        // trigger_camera(this->tPixelDwelltime, PIN_NUM_TRIG_PIXEL);
+
+        // Possibly clear certain triggers
+        set_gpio_pins(1, 0, 0);
+      }
+      // Possibly clear certain triggers
+      set_gpio_pins(1, 1, 0);
+    }
+    // End of frame
+    set_gpio_pins(0, 0, 0);
+  }
+}
+
+////////////////////////////////////////////////////////////////
+// Start rendering
+////////////////////////////////////////////////////////////////
 void SPIRenderer::start()
 {
-  // start the SPI renderer
-  printf("Starting to draw %d\n", 1);
+  printf("Starting to draw...\n");
   draw();
-  printf("Done with drawing %d", 1);
+  printf("Done with drawing.\n");
 }
