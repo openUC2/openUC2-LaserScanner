@@ -15055,11 +15055,7 @@
 				(justify left top)
 			)
 		)
-<<<<<<< Updated upstream
-		(property "Footprint" ""
-=======
 		(property "Footprint" "Inductor_SMD:L_Neosid_SMs95_SMs95p"
->>>>>>> Stashed changes
 			(at 392.43 86.36 0)
 			(effects
 				(font
@@ -15102,11 +15098,7 @@
 			(project ""
 				(path "/94263d6b-58fa-4abb-974a-2570e840d0a0"
 					(reference "L1")
-<<<<<<< Updated upstream
-					(unit 0)
-=======
 					(unit 1)
->>>>>>> Stashed changes
 				)
 			)
 		)
@@ -15220,11 +15212,7 @@
 				(hide yes)
 			)
 		)
-<<<<<<< Updated upstream
-		(property "Footprint" ""
-=======
 		(property "Footprint" "LED_SMD:LED_0603_1608Metric"
->>>>>>> Stashed changes
 			(at 337.82 45.72 0)
 			(effects
 				(font
@@ -15303,11 +15291,7 @@
 			(project ""
 				(path "/94263d6b-58fa-4abb-974a-2570e840d0a0"
 					(reference "LED_TX1")
-<<<<<<< Updated upstream
-					(unit 0)
-=======
 					(unit 1)
->>>>>>> Stashed changes
 				)
 			)
 		)
@@ -15981,11 +15965,7 @@
 				(hide yes)
 			)
 		)
-<<<<<<< Updated upstream
-		(property "Footprint" ""
-=======
 		(property "Footprint" "LED_SMD:LED_0603_1608Metric"
->>>>>>> Stashed changes
 			(at 336.55 7.62 0)
 			(effects
 				(font
@@ -16064,11 +16044,7 @@
 			(project ""
 				(path "/94263d6b-58fa-4abb-974a-2570e840d0a0"
 					(reference "LED_15")
-<<<<<<< Updated upstream
-					(unit 0)
-=======
 					(unit 1)
->>>>>>> Stashed changes
 				)
 			)
 		)
@@ -16608,11 +16584,7 @@
 				(justify left top)
 			)
 		)
-<<<<<<< Updated upstream
-		(property "Footprint" ""
-=======
 		(property "Footprint" "Capacitor_SMD:CP_Elec_10x10"
->>>>>>> Stashed changes
 			(at 353.06 96.52 0)
 			(effects
 				(font
@@ -16655,11 +16627,7 @@
 			(project ""
 				(path "/94263d6b-58fa-4abb-974a-2570e840d0a0"
 					(reference "C7")
-<<<<<<< Updated upstream
-					(unit 0)
-=======
 					(unit 1)
->>>>>>> Stashed changes
 				)
 			)
 		)
@@ -19132,11 +19100,7 @@
 				(hide yes)
 			)
 		)
-<<<<<<< Updated upstream
-		(property "Footprint" ""
-=======
 		(property "Footprint" "LED_SMD:LED_0603_1608Metric"
->>>>>>> Stashed changes
 			(at 370.84 24.13 0)
 			(effects
 				(font
@@ -19215,11 +19179,7 @@
 			(project ""
 				(path "/94263d6b-58fa-4abb-974a-2570e840d0a0"
 					(reference "LED_33")
-<<<<<<< Updated upstream
-					(unit 0)
-=======
 					(unit 1)
->>>>>>> Stashed changes
 				)
 			)
 		)
@@ -19533,11 +19493,7 @@
 				(justify left top)
 			)
 		)
-<<<<<<< Updated upstream
-		(property "Footprint" ""
-=======
 		(property "Footprint" "Capacitor_SMD:CP_Elec_10x10"
->>>>>>> Stashed changes
 			(at 420.37 97.79 0)
 			(effects
 				(font
@@ -19580,11 +19536,7 @@
 			(project ""
 				(path "/94263d6b-58fa-4abb-974a-2570e840d0a0"
 					(reference "C9")
-<<<<<<< Updated upstream
-					(unit 0)
-=======
 					(unit 1)
->>>>>>> Stashed changes
 				)
 			)
 		)
@@ -20326,11 +20278,7 @@
 				(justify left top)
 			)
 		)
-<<<<<<< Updated upstream
-		(property "Footprint" ""
-=======
 		(property "Footprint" "Inductor_SMD:L_Neosid_SMs95_SMs95p"
->>>>>>> Stashed changes
 			(at 330.2 85.09 0)
 			(effects
 				(font
@@ -20373,11 +20321,7 @@
 			(project ""
 				(path "/94263d6b-58fa-4abb-974a-2570e840d0a0"
 					(reference "L2")
-<<<<<<< Updated upstream
-					(unit 0)
-=======
 					(unit 1)
->>>>>>> Stashed changes
 				)
 			)
 		)
@@ -20994,11 +20938,7 @@
 				(hide yes)
 			)
 		)
-<<<<<<< Updated upstream
-		(property "Footprint" ""
-=======
 		(property "Footprint" "LED_SMD:LED_0603_1608Metric"
->>>>>>> Stashed changes
 			(at 381 45.72 0)
 			(effects
 				(font
@@ -21077,11 +21017,7 @@
 			(project ""
 				(path "/94263d6b-58fa-4abb-974a-2570e840d0a0"
 					(reference "LED_RX1")
-<<<<<<< Updated upstream
-					(unit 0)
-=======
 					(unit 1)
->>>>>>> Stashed changes
 				)
 			)
 		)
@@ -22316,11 +22252,7 @@
 				(hide yes)
 			)
 		)
-<<<<<<< Updated upstream
-		(property "Footprint" ""
-=======
 		(property "Footprint" "LED_SMD:LED_0603_1608Metric"
->>>>>>> Stashed changes
 			(at 401.32 3.81 0)
 			(effects
 				(font
@@ -22399,11 +22331,7 @@
 			(project ""
 				(path "/94263d6b-58fa-4abb-974a-2570e840d0a0"
 					(reference "LED_-15")
-<<<<<<< Updated upstream
-					(unit 0)
-=======
 					(unit 1)
->>>>>>> Stashed changes
 				)
 			)
 		)
@@ -22636,11 +22564,7 @@
 				(hide yes)
 			)
 		)
-<<<<<<< Updated upstream
-		(property "Footprint" ""
-=======
 		(property "Footprint" "LED_SMD:LED_0603_1608Metric"
->>>>>>> Stashed changes
 			(at 334.01 24.13 0)
 			(effects
 				(font
@@ -22719,11 +22643,7 @@
 			(project ""
 				(path "/94263d6b-58fa-4abb-974a-2570e840d0a0"
 					(reference "LED_2")
-<<<<<<< Updated upstream
-					(unit 0)
-=======
 					(unit 1)
->>>>>>> Stashed changes
 				)
 			)
 		)
@@ -22837,11 +22757,7 @@
 				(hide yes)
 			)
 		)
-<<<<<<< Updated upstream
-		(property "Footprint" ""
-=======
 		(property "Footprint" "LED_SMD:LED_0603_1608Metric"
->>>>>>> Stashed changes
 			(at 411.48 24.13 0)
 			(effects
 				(font
@@ -22920,11 +22836,7 @@
 			(project ""
 				(path "/94263d6b-58fa-4abb-974a-2570e840d0a0"
 					(reference "LED_5")
-<<<<<<< Updated upstream
-					(unit 0)
-=======
 					(unit 1)
->>>>>>> Stashed changes
 				)
 			)
 		)
