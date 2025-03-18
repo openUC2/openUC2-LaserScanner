@@ -1,0 +1,82 @@
+#include <stdio.h>
+#include <string.h>
+#include "esp_err.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include <arpa/inet.h>
+#include <vector>
+#include "driver/i2c.h"
+
+#include "ILDAFile.h"
+#include "SPIRenderer.h"
+#define portTICK_PERIOD_MS 10
+
+static const char *TAG = "main";
+
+// I2C Configuration Parameters
+#define I2C_SLAVE_SCL_IO    22    // SCL Pin
+#define I2C_SLAVE_SDA_IO    21    // SDA Pin
+#define I2C_SLAVE_NUM       I2C_NUM_0 // I2C port number for the slave device
+#define I2C_SLAVE_TX_BUF_DISABLE   0   // I2C slave does not need buffer
+#define I2C_SLAVE_RX_BUF_DISABLE   0   
+#define I2C_SLAVE_ADDR      0x28  // I2C Address of the slave device
+
+// Function to initialize I2C as slave
+static esp_err_t i2c_slave_init() {
+    int i2c_master_port = I2C_SLAVE_NUM;
+    i2c_config_t conf = {};
+    conf.sda_io_num = I2C_SLAVE_SDA_IO;
+    conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
+    conf.scl_io_num = I2C_SLAVE_SCL_IO;
+    conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
+    conf.mode = I2C_MODE_SLAVE;
+    conf.slave.addr_10bit_en = 0;
+    conf.slave.slave_addr = I2C_SLAVE_ADDR;
+    i2c_param_config(i2c_master_port, &conf);
+    return i2c_driver_install(i2c_master_port, conf.mode,
+                              I2C_SLAVE_RX_BUF_DISABLE,
+                              I2C_SLAVE_TX_BUF_DISABLE, 0);
+}
+
+// Function to read incoming I2C data and parse it
+static bool read_i2c_parameters(int *X_MIN, int *X_MAX, int *Y_MIN, int *Y_MAX, int *STEP, int *tPixelDwelltime, int *nFrames) {
+    uint8_t buffer[28];
+    int size = i2c_slave_read_buffer(I2C_SLAVE_NUM, buffer, sizeof(buffer), 1000 / portTICK_RATE_MS);
+    if (size == 28) {
+        // Assuming parameters are sent in a specific order and format
+        *X_MIN = ntohl(*(int*)&buffer[0]);
+        *X_MAX = ntohl(*(int*)&buffer[4]);
+        *Y_MIN = ntohl(*(int*)&buffer[8]);
+        *Y_MAX = ntohl(*(int*)&buffer[12]);
+        *STEP = ntohl(*(int*)&buffer[16]);
+        *tPixelDwelltime = ntohl(*(int*)&buffer[20]);
+        *nFrames = ntohl(*(int*)&buffer[24]);
+        return true; // Successful read
+    }
+    return false; // Failed to read or incomplete data
+}
+
+
+extern "C" {
+void app_main(void) {
+    ESP_LOGI(TAG, "Starting up...");
+    // Initialize I2C as slave
+    ESP_ERROR_CHECK(i2c_slave_init());
+
+    // Default scanning parameters, will be overwritten by I2C commands
+    int X_MIN = 0, X_MAX = 30000, Y_MIN = 0, Y_MAX = 30000, STEP = 1000, tPixelDwelltime = 1, nFrames = 10;
+    SPIRenderer *renderer = new SPIRenderer(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames);
+
+    while (1) {
+        // Check for new parameters from I2C
+        if (read_i2c_parameters(&X_MIN, &X_MAX, &Y_MIN, &Y_MAX, &STEP, &tPixelDwelltime, &nFrames)) {
+            ESP_LOGI(TAG, "New scan parameters received. Updating...");
+            renderer->setParameters(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames);
+            renderer->start();
+        } else {
+            // No new parameters, or read failed; optionally, handle as needed
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+        }
+    }
+}
+}
