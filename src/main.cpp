@@ -25,12 +25,12 @@ void app_main()
   esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(0));
 
   int X_MIN = 0;
-  int X_MAX = 100;
+  int X_MAX = 4000;
   int Y_MIN = 0;
-  int Y_MAX = 100;
-  int STEP = 1; // Adjust based on your desired resolution
+  int Y_MAX = 4000;
+  int STEP = 500; // Adjust based on your desired resolution
   int tPixelDwelltime = 5;
-  int nFrames = 100;
+  int nFrames = 1000;
   SPIRenderer *renderer = new SPIRenderer(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames);
   while (1){
     tPixelDwelltime +=1;

@@ -236,51 +236,66 @@ void SPIRenderer::draw()
     // pixelTrigVal, lineTrigVal, frameTrigVal
     set_gpio_pins(1, 1, 1);
 
-    // Loop over X
-    for (int dacX = X_MIN; dacX <= X_MAX; dacX += STEP)
-    {
-
-      // Loop over Y
-      for (int dacY = Y_MIN; dacY <= Y_MAX; dacY += STEP)
-      {
-        set_gpio_pins(0, 0, 0);
-
-        //ESP_LOGI(TAG, "Drawing pixel at %d %d", dacX, dacY);
-
-        // SPI transaction for channel A (X-axis)
-        spi_transaction_t t1 = {};
-        t1.length = 16; // 16 bits
-        t1.flags = SPI_TRANS_USE_TXDATA;
-        t1.tx_data[0] = (0b00110000 | ((dacX >> 8) & 0x0F)); // Bit 5 = 1 (Gain = 1)
-        t1.tx_data[1] = (dacX & 0xFF);
-
-        // SPI transaction for channel B (Y-axis)
-        spi_transaction_t t2 = {};
-        t2.length = 16;
-        t2.flags = SPI_TRANS_USE_TXDATA;
-        t2.tx_data[0] = (0b10110000 | ((dacY >> 8) & 0x0F)); // Bit 5 = 1 (Gain = 1)
-        t2.tx_data[1] = (dacY & 0xFF);
-
-        // Latch the DAC
-        gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 0);
-        gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 1);
-
-        gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 0); // Hold LDAC low
-        spi_device_polling_transmit(spi, &t1);       // Send X value
-        spi_device_polling_transmit(spi, &t2);       // Send Y value
-        gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 1); // Latch both channels
-
-        // Trigger the camera for each pixel
-        // trigger_camera(this->tPixelDwelltime, PIN_NUM_TRIG_PIXEL);
-
-        // Possibly clear certain triggers
-        set_gpio_pins(1, 0, 0);
-      }
-      // Possibly clear certain triggers
-      set_gpio_pins(1, 1, 0);
+    //initialize the loopcount for each frame
+    int loopcount = 0;
+    // Loop over X axis
+    for (int dacX = X_MIN; dacX <= X_MAX; dacX += STEP) {
+        loopcount++;
+        vTaskDelay(pdMS_TO_TICKS(200));
+    
+        // Determine the starting value and step for the Y loop based on the parity of loopcount
+        int startY, stepY;
+        if (loopcount % 2 == 0) {
+            // Even loop: start from Y_MAX, with a negative step (from high to low)
+            startY = Y_MAX;
+            stepY = (Y_MIN - Y_MAX)/10;  
+        } else {
+            // Odd loop: start from Y_MIN, with a positive step (from low to high)
+            startY = Y_MIN;
+            stepY = (Y_MAX - Y_MIN)/10;  
+        }
+    
+        // Loop over Y axis, orientation depends on the loopcount
+        for (int dacY = startY; (stepY > 0 ? dacY <= Y_MAX : dacY >= Y_MIN); dacY += stepY) {
+          vTaskDelay(pdMS_TO_TICKS(200));
+    
+          //set_gpio_pins(0, 0, 0);
+    
+            // SPI transaction for channel A (X-axis)
+            spi_transaction_t t1 = {};
+            t1.length = 16; // 16 bits
+            t1.flags = SPI_TRANS_USE_TXDATA;
+            t1.tx_data[0] = (0b00110000 | ((dacX >> 8) & 0x0F));  // Bit 5 = 1 (Gain = 1)
+            t1.tx_data[1] = (dacX & 0xFF);
+    
+            // SPI transaction for channel B (Y-axis)
+            spi_transaction_t t2 = {};
+            t2.length = 16;
+            t2.flags = SPI_TRANS_USE_TXDATA;
+            t2.tx_data[0] = (0b10110000 | ((dacY >> 8) & 0x0F));  // Bit 5 = 1 (Gain = 1)
+            t2.tx_data[1] = (dacY & 0xFF);
+    
+            // Latch the DAC and send the SPI data
+            gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 0);
+            gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 1);
+    
+            gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 0); // Hold LDAC low
+            spi_device_polling_transmit(spi, &t1);       // Send X value
+            spi_device_polling_transmit(spi, &t2);       // Send Y value
+            gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 1); // Latch both channels
+    
+            // Trigger the camera and possibly clear trigger signals
+            // trigger_camera(this->tPixelDwelltime, PIN_NUM_TRIG_PIXEL);
+            //set_gpio_pins(1, 0, 0);
+        }
+        // Clear some triggers
+        //set_gpio_pins(1, 1, 0);
     }
+    // Clear triggers after the frame ends
+    //set_gpio_pins(0, 0, 0);
+    
     // End of frame
-    set_gpio_pins(0, 0, 0);
+    //set_gpio_pins(0, 0, 0);
   }
 }
 
