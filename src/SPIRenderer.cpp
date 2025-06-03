@@ -160,6 +160,7 @@ SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax,
   }
 
   // SPI bus configuration
+  // MCP4822-E/SN
   esp_err_t ret;
   spi_bus_config_t buscfg = {
       .mosi_io_num = PIN_NUM_SDI,
@@ -174,7 +175,7 @@ SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax,
       .address_bits = 0,
       .dummy_bits = 0,
       .mode = 0,
-      .clock_speed_hz = 20 * 1000 * 1000, // 20 MHz
+      .clock_speed_hz = 20 * 1000 * 1000, // 20 MHz is max
       .spics_io_num = PIN_NUM_CS,
       .flags = SPI_DEVICE_NO_DUMMY,
       .queue_size = 2,

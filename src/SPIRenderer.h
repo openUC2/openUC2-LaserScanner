@@ -34,7 +34,7 @@ static const char *TAG = "Renderer";
 #define PIN_NUM_LDAC GPIO_NUM_27  // GPIO_NUM_33
 #define PIN_NUM_LASER GPIO_NUM_26 //
 #define PIN_NUM_TRIG_PIXEL GPIO_NUM_23
-#define PIN_NUM_TRIG_LINE GPIO_NUM_22
+#define PIN_NUM_TRIG_LINE GPIO_NUM_22x
 #define PIN_NUM_TRIG_FRAME GPIO_NUM_21
 #endif
 
