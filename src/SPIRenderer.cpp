@@ -27,13 +27,13 @@ static const char *TAG = "SPIRenderer";
 static inline void fast_gpio_set(int pin)
 {
   // For GPIO pin < 32 on ESP32-S3:
-  GPIO.out_w1ts.val = (1U << pin);
+  GPIO.out_w1ts = (1U << pin);
 }
 
 static inline void fast_gpio_clear(int pin)
 {
   // For GPIO pin < 32 on ESP32-S3:
-  GPIO.out_w1tc.val = (1U << pin);
+  GPIO.out_w1tc = (1U << pin);
 }
 #endif
 
@@ -111,9 +111,9 @@ void trigger_camera(int tPixelDwelltime, int triggerPin = PIN_NUM_TRIG_PIXEL)
   gpio_set_level((gpio_num_t)triggerPin, 0);
 #else
   // On ESP32-S3, optionally do direct register toggling
-  GPIO.out_w1ts.val = (1U << triggerPin); // set bit
+  GPIO.out_w1ts = (1U << triggerPin); // set bit
   esp_rom_delay_us(tPixelDwelltime);
-  GPIO.out_w1tc.val = (1U << triggerPin); // clear bit
+  GPIO.out_w1tc = (1U << triggerPin); // clear bit
 #endif
 }
 
@@ -221,9 +221,71 @@ void SPIRenderer::setParameters(int xmin, int xmax, int ymin, int ymax,
          xmin, xmax, ymin, ymax, step, tPixelDwelltime, nFrames);
 }
 
-////////////////////////////////////////////////////////////////
-// The main draw function
-////////////////////////////////////////////////////////////////
+
+void SPIRenderer::draw()
+{
+    for (int iFrame = 0; iFrame < nFrames; iFrame++)
+    {
+        printf("Drawing frame %d of %d\n", iFrame + 1, nFrames);
+
+        // Directly set all triggers high to mark frame start
+        GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL) |
+                        (1U << PIN_NUM_TRIG_LINE) |
+                        (1U << PIN_NUM_TRIG_FRAME);
+
+        // add a small delay to ensure the frame start is registered
+        esp_rom_delay_us(1);
+        // Loop over X
+        for(int dacX = X_MIN; dacX <= X_MAX; dacX += STEP)
+        {
+            // Loop over Y
+            for(int dacY = Y_MIN; dacY <= Y_MAX; dacY += STEP)
+            {
+                // Clear triggers in one go
+                GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL) |
+                                (1U << PIN_NUM_TRIG_LINE) |
+                                (1U << PIN_NUM_TRIG_FRAME);
+
+                // Prepare SPI transactions for X and Y
+                spi_transaction_t t1 = {};
+                t1.length = 16;
+                t1.flags = SPI_TRANS_USE_TXDATA;
+                t1.tx_data[0] = (0b00110000 | ((dacX >> 8) & 0x0F));
+                t1.tx_data[1] = (dacX & 0xFF);
+
+                spi_transaction_t t2 = {};
+                t2.length = 16;
+                t2.flags = SPI_TRANS_USE_TXDATA;
+                t2.tx_data[0] = (0b10110000 | ((dacY >> 8) & 0x0F));
+                t2.tx_data[1] = (dacY & 0xFF);
+
+                // Fewer LDAC toggles: latch once per pixel
+                GPIO.out_w1tc = (1U << PIN_NUM_LDAC);  // hold LDAC low
+                spi_device_polling_transmit(spi, &t1); // send X
+                spi_device_polling_transmit(spi, &t2); // send Y
+                GPIO.out_w1ts = (1U << PIN_NUM_LDAC);  // latch both channels
+
+                // Optionally set a trigger directly for the pixel
+                GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL);
+                // Delay if needed: esp_rom_delay_us(tPixelDwelltime);
+
+                // Clear pixel trigger again
+                GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL);
+            }
+            // Optionally set line trigger here
+            GPIO.out_w1ts = (1U << PIN_NUM_TRIG_LINE);
+            // Possibly delay
+            // Clear line trigger
+            GPIO.out_w1tc = (1U << PIN_NUM_TRIG_LINE);
+        }
+        // End of frame: clear triggers
+        GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL) |
+                        (1U << PIN_NUM_TRIG_LINE) |
+                        (1U << PIN_NUM_TRIG_FRAME);
+    }
+}
+
+/*
 void SPIRenderer::draw()
 {
   // Outer loop: frames
@@ -284,6 +346,7 @@ void SPIRenderer::draw()
     set_gpio_pins(0, 0, 0);
   }
 }
+  */
 
 ////////////////////////////////////////////////////////////////
 // Start rendering
