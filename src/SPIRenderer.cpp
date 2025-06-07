@@ -245,7 +245,7 @@ void SPIRenderer::draw()
                 GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL) |
                                 (1U << PIN_NUM_TRIG_LINE) |
                                 (1U << PIN_NUM_TRIG_FRAME);
-
+                esp_rom_delay_us(1);
                 // Prepare SPI transactions for X and Y
                 spi_transaction_t t1 = {};
                 t1.length = 16;
@@ -267,7 +267,8 @@ void SPIRenderer::draw()
 
                 // Optionally set a trigger directly for the pixel
                 GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL);
-                // Delay if needed: esp_rom_delay_us(tPixelDwelltime);
+                // Delay if needed: 
+                esp_rom_delay_us(tPixelDwelltime);
 
                 // Clear pixel trigger again
                 GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL);
