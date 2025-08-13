@@ -226,32 +226,11 @@ void SPIRenderer::draw()
 {
     for (int iFrame = 0; iFrame < nFrames; iFrame++)
     {
-        printf("Drawing frame %d of %d\n", iFrame + 1, nFrames);
 
-        // Directly set all triggers high to mark frame start
-        GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL) |
-                        (1U << PIN_NUM_TRIG_LINE) |
-                        (1U << PIN_NUM_TRIG_FRAME);
-
-        // add a small delay to ensure the frame start is registered
-        esp_rom_delay_us(1);
-        // Loop over X
-        for(int dacX = X_MIN; dacX <= X_MAX; dacX += STEP)
-        {
             // Loop over Y
             for(int dacY = Y_MIN; dacY <= Y_MAX; dacY += STEP)
             {
-                // Clear triggers in one go
-                GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL) |
-                                (1U << PIN_NUM_TRIG_LINE) |
-                                (1U << PIN_NUM_TRIG_FRAME);
-                esp_rom_delay_us(1);
                 // Prepare SPI transactions for X and Y
-                spi_transaction_t t1 = {};
-                t1.length = 16;
-                t1.flags = SPI_TRANS_USE_TXDATA;
-                t1.tx_data[0] = (0b00110000 | ((dacX >> 8) & 0x0F));
-                t1.tx_data[1] = (dacX & 0xFF);
 
                 spi_transaction_t t2 = {};
                 t2.length = 16;
@@ -261,28 +240,28 @@ void SPIRenderer::draw()
 
                 // Fewer LDAC toggles: latch once per pixel
                 GPIO.out_w1tc = (1U << PIN_NUM_LDAC);  // hold LDAC low
-                spi_device_polling_transmit(spi, &t1); // send X
                 spi_device_polling_transmit(spi, &t2); // send Y
                 GPIO.out_w1ts = (1U << PIN_NUM_LDAC);  // latch both channels
 
-                // Optionally set a trigger directly for the pixel
-                GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL);
-                // Delay if needed: 
-                esp_rom_delay_us(tPixelDwelltime);
-
-                // Clear pixel trigger again
-                GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL);
             }
-            // Optionally set line trigger here
-            GPIO.out_w1ts = (1U << PIN_NUM_TRIG_LINE);
-            // Possibly delay
-            // Clear line trigger
-            GPIO.out_w1tc = (1U << PIN_NUM_TRIG_LINE);
-        }
-        // End of frame: clear triggers
-        GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL) |
-                        (1U << PIN_NUM_TRIG_LINE) |
-                        (1U << PIN_NUM_TRIG_FRAME);
+            // Loop over Y
+            for(int dacY = Y_MAX; dacY >= Y_MIN; dacY -= STEP)
+            {
+                spi_transaction_t t2 = {};
+                t2.length = 16;
+                t2.flags = SPI_TRANS_USE_TXDATA;
+                t2.tx_data[0] = (0b10110000 | ((dacY >> 8) & 0x0F));
+                t2.tx_data[1] = (dacY & 0xFF);
+
+                // Fewer LDAC toggles: latch once per pixel
+                GPIO.out_w1tc = (1U << PIN_NUM_LDAC);  // hold LDAC low
+                spi_device_polling_transmit(spi, &t2); // send Y
+                GPIO.out_w1ts = (1U << PIN_NUM_LDAC);  // latch both channels
+
+            }
+
+        
+        
     }
 }
 
