@@ -64,7 +64,8 @@ def test_galvo_act_full(ser):
         "Y_MAX": 5000,
         "STEP": 100,
         "tPixelDwelltime": 5,
-        "nFrames": 1
+        "nFrames": 1,
+        "SNAKE": True
     }
     response = send_command(ser, cmd)
     
@@ -74,12 +75,28 @@ def test_galvo_act_full(ser):
     print("✓ /galvo_act (full parameters) test passed")
 
 
+def test_galvo_act_snake_pattern(ser):
+    """Test the /galvo_act command with SNAKE parameter."""
+    print("\n=== Testing /galvo_act with SNAKE pattern ===")
+    cmd = {
+        "task": "/galvo_act",
+        "qid": 3,
+        "SNAKE": True
+    }
+    response = send_command(ser, cmd)
+    
+    # Validate response
+    assert "success" in response, "Missing success status"
+    assert "qid" in response and "3" in response, "QID not echoed correctly"
+    print("✓ /galvo_act (SNAKE pattern) test passed")
+
+
 def test_galvo_act_partial(ser):
     """Test the /galvo_act command with partial parameters."""
     print("\n=== Testing /galvo_act with partial parameters ===")
     cmd = {
         "task": "/galvo_act",
-        "qid": 3,
+        "qid": 4,
         "X_MAX": 10000,
         "STEP": 50
     }
@@ -87,7 +104,7 @@ def test_galvo_act_partial(ser):
     
     # Validate response
     assert "success" in response, "Missing success status"
-    assert "qid" in response and "3" in response, "QID not echoed correctly"
+    assert "qid" in response and "4" in response, "QID not echoed correctly"
     print("✓ /galvo_act (partial parameters) test passed")
 
 
@@ -112,7 +129,7 @@ def test_invalid_json(ser):
 def test_missing_task(ser):
     """Test handling of missing task field."""
     print("\n=== Testing missing task field ===")
-    cmd = {"qid": 4, "X_MIN": 0}
+    cmd = {"qid": 5, "X_MIN": 0}
     response = send_command(ser, cmd)
     
     assert "error" in response.lower(), "Expected error response for missing task"
@@ -123,7 +140,7 @@ def test_missing_task(ser):
 def test_unknown_task(ser):
     """Test handling of unknown task."""
     print("\n=== Testing unknown task ===")
-    cmd = {"task": "/unknown_command", "qid": 5}
+    cmd = {"task": "/unknown_command", "qid": 6}
     response = send_command(ser, cmd)
     
     assert "error" in response.lower(), "Expected error response for unknown task"
@@ -152,6 +169,7 @@ def main():
         # Run all tests
         test_state_get(ser)
         test_galvo_act_full(ser)
+        test_galvo_act_snake_pattern(ser)
         test_galvo_act_partial(ser)
         test_invalid_json(ser)
         test_missing_task(ser)

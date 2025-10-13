@@ -8,7 +8,7 @@ Implemented JSON command parsing using ArduinoJson library (v6.21.2), matching t
 ### 2. Command Structure ✓
 Following the exact format specified:
 ```json
-{"task":"/galvo_act", "qid":1, "X_MIN":0, "X_MAX":30000, "Y_MIN":0, "Y_MAX":30000, "STEP":1000, "tPixelDwelltime":1, "nFrames":1}
+{"task":"/galvo_act", "qid":1, "X_MIN":0, "X_MAX":30000, "Y_MIN":0, "Y_MAX":30000, "STEP":1000, "tPixelDwelltime":1, "nFrames":1, "SNAKE":true}
 ```
 
 ### 3. Parameters Adjustable ✓
@@ -20,6 +20,7 @@ All requested parameters are configurable via serial:
 - STEP (int): Step size/resolution
 - tPixelDwelltime (int): Pixel dwell time in microseconds
 - nFrames (int): Number of frames to render
+- SNAKE (bool): Snake scanning pattern - alternates line direction for optimized scanning
 
 ### 4. Similar Architecture to Reference ✓
 Implementation follows the waveshare LED array pattern:
@@ -60,6 +61,36 @@ src/main.cpp:
 │   └── /galvo_act handler
 ├── processSerial() - Read and buffer serial input
 └── app_main() - Initialize and main loop
+
+src/SPIRenderer.cpp:
+└── draw() - Rendering loop with snake pattern support
+    ├── Normal scanning: All lines scan Y_MIN → Y_MAX
+    └── Snake scanning: Alternates direction (even: →, odd: ←)
+```
+
+### Snake Scanning Pattern
+The SNAKE parameter enables an optimized scanning pattern:
+
+**Implementation:**
+- Tracks line number during scanning
+- Even lines (0, 2, 4...): Scan from Y_MIN to Y_MAX (forward)
+- Odd lines (1, 3, 5...): Scan from Y_MAX to Y_MIN (backward)
+
+**Benefits:**
+- Eliminates flyback time between lines
+- Reduces mechanical stress on galvo mirrors
+- Improves scanning speed
+- More continuous motion profile
+
+**Code logic:**
+```cpp
+if (SNAKE && (lineNumber % 2 == 1)) {
+    // Odd lines: scan backward
+    yStart = Y_MAX; yEnd = Y_MIN; yStep = -STEP;
+} else {
+    // Even lines: scan forward
+    yStart = Y_MIN; yEnd = Y_MAX; yStep = STEP;
+}
 ```
 
 ## Compatibility Notes

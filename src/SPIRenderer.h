@@ -71,11 +71,12 @@ private:
   int Y_MAX = 2048;
   int STEP = 64; // Adjust based on your desired resolution
   int nFrames = 1;
+  bool SNAKE = false; // Snake scanning pattern
   
 
 public:
-  SPIRenderer(int xmin, int xmax, int ymin, int ymax, int step, int tPixelDwelltime, int nFramesI);
+  SPIRenderer(int xmin, int xmax, int ymin, int ymax, int step, int tPixelDwelltime, int nFramesI, bool snake = false);
   void start();
-  void setParameters(int xmin, int xmax, int ymin, int ymax, int step, int tPixelDwelltime, int nFramesI);
+  void setParameters(int xmin, int xmax, int ymin, int ymax, int step, int tPixelDwelltime, int nFramesI, bool snake = false);
 
 };

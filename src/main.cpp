@@ -27,6 +27,7 @@ int Y_MAX = 6000;
 int STEP = 20;
 int tPixelDwelltime = 10;
 int nFrames = 100;
+bool SNAKE = false; // Snake scanning pattern (alternate line direction)
 
 extern "C"
 {
@@ -85,6 +86,7 @@ void handleJSON(const String &jsonString) {
     int newStep = doc["STEP"] | STEP;
     int newDwell = doc["tPixelDwelltime"] | tPixelDwelltime;
     int newFrames = doc["nFrames"] | nFrames;
+    bool newSnake = doc["SNAKE"] | SNAKE;
 
     // Update global parameters
     X_MIN = newXMin;
@@ -94,10 +96,11 @@ void handleJSON(const String &jsonString) {
     STEP = newStep;
     tPixelDwelltime = newDwell;
     nFrames = newFrames;
+    SNAKE = newSnake;
 
     // Update renderer if it exists
     if (renderer != nullptr) {
-      renderer->setParameters(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames);
+      renderer->setParameters(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames, SNAKE);
     }
 
     // Report success
@@ -145,7 +148,7 @@ void app_main()
   esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(0));
 
   // Create renderer with default parameters
-  renderer = new SPIRenderer(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames);
+  renderer = new SPIRenderer(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames, SNAKE);
   
   while (1) {
     // Process any incoming serial commands

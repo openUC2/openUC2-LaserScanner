@@ -42,7 +42,7 @@ Updates the galvo scanner parameters for X/Y scanning.
 
 **Request:**
 ```json
-{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":30000,"Y_MIN":0,"Y_MAX":30000,"STEP":1000,"tPixelDwelltime":1,"nFrames":1}
+{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":30000,"Y_MIN":0,"Y_MAX":30000,"STEP":1000,"tPixelDwelltime":1,"nFrames":1,"SNAKE":true}
 ```
 
 **Parameters:**
@@ -53,6 +53,7 @@ Updates the galvo scanner parameters for X/Y scanning.
 - `STEP` (int): Step size for scanning (default: 20)
 - `tPixelDwelltime` (int): Pixel dwell time in microseconds (default: 10)
 - `nFrames` (int): Number of frames to scan (default: 100)
+- `SNAKE` (bool): Enable snake scanning pattern - even lines scan left-to-right, odd lines scan right-to-left (default: false)
 - `qid` (int, optional): Query ID for tracking requests
 
 **Response:**
@@ -79,6 +80,42 @@ Updates the galvo scanner parameters for X/Y scanning.
 {"status":"error","info":"Unknown task"}
 ```
 
+## Scanning Patterns
+
+### Snake Scanning Pattern
+
+The `SNAKE` parameter enables an optimized scanning pattern that reduces the time needed to reposition the galvo mirrors between lines:
+
+**Normal Scanning (SNAKE=false):**
+```
+Line 0: Y_MIN → Y_MAX (left to right)
+Line 1: Y_MIN → Y_MAX (left to right)
+Line 2: Y_MIN → Y_MAX (left to right)
+...
+```
+After each line, the scanner must return from Y_MAX back to Y_MIN before starting the next line.
+
+**Snake Scanning (SNAKE=true):**
+```
+Line 0 (even): Y_MIN → Y_MAX (left to right)
+Line 1 (odd):  Y_MAX → Y_MIN (right to left)
+Line 2 (even): Y_MIN → Y_MAX (left to right)
+Line 3 (odd):  Y_MAX → Y_MIN (right to left)
+...
+```
+The scanner alternates direction, eliminating the need to return to the start position between lines, which can significantly improve scanning speed and reduce mechanical wear.
+
+**Benefits of Snake Scanning:**
+- Faster scanning (no flyback time between lines)
+- Reduced mechanical stress on galvo mirrors
+- More continuous motion
+- Better for high-speed applications
+
+**Usage Example:**
+```json
+{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":10000,"Y_MIN":0,"Y_MAX":10000,"STEP":100,"SNAKE":true}
+```
+
 ## Usage Examples
 
 ### Using Python
@@ -98,7 +135,7 @@ ser.write((json.dumps(cmd) + '\n').encode())
 response = ser.readline().decode()
 print(response)
 
-# Set galvo parameters
+# Set galvo parameters with snake scanning
 cmd = {
     "task": "/galvo_act",
     "qid": 2,
@@ -108,7 +145,8 @@ cmd = {
     "Y_MAX": 10000,
     "STEP": 100,
     "tPixelDwelltime": 5,
-    "nFrames": 10
+    "nFrames": 10,
+    "SNAKE": True
 }
 ser.write((json.dumps(cmd) + '\n').encode())
 response = ser.readline().decode()
@@ -134,7 +172,7 @@ screen /dev/ttyUSB0 115200
 
 # Type JSON commands followed by Enter
 {"task":"/state_get","qid":1}
-{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":5000,"Y_MIN":0,"Y_MAX":5000,"STEP":50,"tPixelDwelltime":10,"nFrames":1}
+{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":5000,"Y_MIN":0,"Y_MAX":5000,"STEP":50,"tPixelDwelltime":10,"nFrames":1,"SNAKE":true}
 ```
 
 ## Notes

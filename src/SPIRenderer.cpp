@@ -121,7 +121,7 @@ void trigger_camera(int tPixelDwelltime, int triggerPin = PIN_NUM_TRIG_PIXEL)
 // The SPIRenderer class
 ////////////////////////////////////////////////////////////////
 SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax,
-                         int step, int tPixelDwelltime, int nFramesI)
+                         int step, int tPixelDwelltime, int nFramesI, bool snake)
 {
   // Avoid variable shadowing:
   this->tPixelDwelltime = tPixelDwelltime;
@@ -136,9 +136,10 @@ SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax,
   Y_MAX = ymax;
   STEP = step;
   nFrames = nFramesI;
+  SNAKE = snake;
 
-  printf("Setting up renderer with parameters: %d %d %d %d %d %d %d\n",
-         xmin, xmax, ymin, ymax, step, tPixelDwelltime, nFrames);
+  printf("Setting up renderer with parameters: %d %d %d %d %d %d %d SNAKE:%d\n",
+         xmin, xmax, ymin, ymax, step, tPixelDwelltime, nFrames, snake);
 
   // Set up the laser pin
   gpio_set_direction((gpio_num_t)PIN_NUM_LASER, GPIO_MODE_OUTPUT);
@@ -203,7 +204,7 @@ SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax,
 }
 
 void SPIRenderer::setParameters(int xmin, int xmax, int ymin, int ymax,
-                                int step, int tPixelDwelltime, int nFramesI)
+                                int step, int tPixelDwelltime, int nFramesI, bool snake)
 {
   // Again, fix shadowing
   this->tPixelDwelltime = tPixelDwelltime;
@@ -216,9 +217,10 @@ void SPIRenderer::setParameters(int xmin, int xmax, int ymin, int ymax,
   Y_MAX = ymax;
   STEP = step;
   nFrames = nFramesI;
+  SNAKE = snake;
 
-  printf("Setting up renderer with parameters: %d %d %d %d %d %d %d\n",
-         xmin, xmax, ymin, ymax, step, tPixelDwelltime, nFrames);
+  printf("Setting up renderer with parameters: %d %d %d %d %d %d %d SNAKE:%d\n",
+         xmin, xmax, ymin, ymax, step, tPixelDwelltime, nFrames, snake);
 }
 
 
@@ -235,11 +237,31 @@ void SPIRenderer::draw()
 
         // add a small delay to ensure the frame start is registered
         esp_rom_delay_us(1);
+        
+        // Track line number for snake pattern
+        int lineNumber = 0;
+        
         // Loop over X
         for(int dacX = X_MIN; dacX <= X_MAX; dacX += STEP)
         {
-            // Loop over Y
-            for(int dacY = Y_MIN; dacY <= Y_MAX; dacY += STEP)
+            // Determine Y scanning direction based on SNAKE mode and line number
+            int yStart, yEnd, yStep;
+            if (SNAKE && (lineNumber % 2 == 1)) {
+                // Odd lines: scan from Y_MAX to Y_MIN (reverse)
+                yStart = Y_MAX;
+                yEnd = Y_MIN;
+                yStep = -STEP;
+            } else {
+                // Even lines (or non-snake mode): scan from Y_MIN to Y_MAX (forward)
+                yStart = Y_MIN;
+                yEnd = Y_MAX;
+                yStep = STEP;
+            }
+            
+            // Loop over Y with direction determined above
+            for(int dacY = yStart; 
+                (yStep > 0) ? (dacY <= yEnd) : (dacY >= yEnd); 
+                dacY += yStep)
             {
                 // Clear triggers in one go
                 GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL) |
@@ -278,6 +300,9 @@ void SPIRenderer::draw()
             // Possibly delay
             // Clear line trigger
             GPIO.out_w1tc = (1U << PIN_NUM_TRIG_LINE);
+            
+            // Increment line number for snake pattern tracking
+            lineNumber++;
         }
         // End of frame: clear triggers
         GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL) |
