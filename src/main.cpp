@@ -35,6 +35,7 @@ int STEP_Y = 20;   // Step size for Y axis
 int tPixelDwelltime = 0;
 int nFrames = 10;
 bool SNAKE = false; // Snake scanning pattern (alternate line direction)
+bool SIM = false;   // Structured illumination mode (shifts pattern by STEP_Y/nFrames per frame)
 bool ENABLE_TRIG_FRAME = true;  // Enable frame trigger
 bool ENABLE_TRIG_LINE = true;   // Enable line trigger
 bool ENABLE_TRIG_PIXEL = true;  // Enable pixel trigger
@@ -60,6 +61,7 @@ void saveParameters() {
   preferences.putInt("tPixelDwell", tPixelDwelltime);
   preferences.putInt("nFrames", nFrames);
   preferences.putBool("SNAKE", SNAKE);
+  preferences.putBool("SIM", SIM);
   preferences.putBool("TRIG_FRAME", ENABLE_TRIG_FRAME);
   preferences.putBool("TRIG_LINE", ENABLE_TRIG_LINE);
   preferences.putBool("TRIG_PIXEL", ENABLE_TRIG_PIXEL);
@@ -83,12 +85,13 @@ void loadParameters() {
   tPixelDwelltime = preferences.getInt("tPixelDwell", 0);
   nFrames = preferences.getInt("nFrames", 10);
   SNAKE = preferences.getBool("SNAKE", false);
+  SIM = preferences.getBool("SIM", false);
   ENABLE_TRIG_FRAME = preferences.getBool("TRIG_FRAME", true);
   ENABLE_TRIG_LINE = preferences.getBool("TRIG_LINE", true);
   ENABLE_TRIG_PIXEL = preferences.getBool("TRIG_PIXEL", true);
   preferences.end();
-  ESP_LOGI(TAG, "Parameters loaded from preferences: X_MIN=%d X_MAX=%d Y_MIN=%d Y_MAX=%d X_OFF=%d Y_OFF=%d STEP_X=%d STEP_Y=%d tPixelDwell=%d nFrames=%d SNAKE=%d TRIG_F=%d TRIG_L=%d TRIG_P=%d", 
-           X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y, tPixelDwelltime, nFrames, SNAKE, ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL);
+  ESP_LOGI(TAG, "Parameters loaded from preferences: X_MIN=%d X_MAX=%d Y_MIN=%d Y_MAX=%d X_OFF=%d Y_OFF=%d STEP_X=%d STEP_Y=%d tPixelDwell=%d nFrames=%d SNAKE=%d SIM=%d TRIG_F=%d TRIG_L=%d TRIG_P=%d", 
+           X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y, tPixelDwelltime, nFrames, SNAKE, SIM, ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL);
 }
 
 
@@ -158,6 +161,7 @@ void handleJSON(const String &jsonString) {
     int newDwell = doc["tPixelDwelltime"] | tPixelDwelltime;
     int newFrames = doc["nFrames"] | nFrames;
     bool newSnake = doc["SNAKE"] | SNAKE;
+    bool newSim = doc["SIM"] | SIM;
     bool newTrigFrame = doc["ENABLE_TRIG_FRAME"] | ENABLE_TRIG_FRAME;
     bool newTrigLine = doc["ENABLE_TRIG_LINE"] | ENABLE_TRIG_LINE;
     bool newTrigPixel = doc["ENABLE_TRIG_PIXEL"] | ENABLE_TRIG_PIXEL;
@@ -174,6 +178,7 @@ void handleJSON(const String &jsonString) {
     tPixelDwelltime = newDwell;
     nFrames = newFrames;
     SNAKE = newSnake;
+    SIM = newSim;
     ENABLE_TRIG_FRAME = newTrigFrame;
     ENABLE_TRIG_LINE = newTrigLine;
     ENABLE_TRIG_PIXEL = newTrigPixel;
@@ -184,7 +189,7 @@ void handleJSON(const String &jsonString) {
     // Update renderer if it exists
     if (renderer != nullptr) {
       renderer->setParameters(X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y, 
-                              tPixelDwelltime, nFrames, SNAKE, 
+                              tPixelDwelltime, nFrames, SNAKE, SIM,
                               ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL);
     }
 
@@ -224,6 +229,8 @@ void handleJSON(const String &jsonString) {
     Serial.print(nFrames);
     Serial.print(",\"SNAKE\":");
     Serial.print(SNAKE ? "true" : "false");
+    Serial.print(",\"SIM\":");
+    Serial.print(SIM ? "true" : "false");
     Serial.print(",\"ENABLE_TRIG_FRAME\":");
     Serial.print(ENABLE_TRIG_FRAME ? "true" : "false");
     Serial.print(",\"ENABLE_TRIG_LINE\":");
@@ -278,7 +285,7 @@ void app_main()
 
   // Create renderer with loaded parameters
   renderer = new SPIRenderer(X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y, 
-                             tPixelDwelltime, nFrames, SNAKE, 
+                             tPixelDwelltime, nFrames, SNAKE, SIM,
                              ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL);
   
   while (1) {
