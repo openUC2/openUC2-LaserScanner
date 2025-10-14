@@ -61,7 +61,7 @@ class SPIRenderer
 {
 private:
   spi_device_handle_t spi;
-  void  draw();
+  void  drawFrame();
   int nX;
   int nY;
   int tPixelDwelltime;
@@ -74,6 +74,7 @@ private:
   int STEP_X = 64;
   int STEP_Y = 64;
   int nFrames = 1;
+  int currentFrame = 0;  // Track current frame for continuous operation
   bool SNAKE = false; // Snake scanning pattern
   bool ENABLE_TRIG_FRAME = true;
   bool ENABLE_TRIG_LINE = true;
@@ -84,7 +85,7 @@ public:
   SPIRenderer(int xmin, int xmax, int ymin, int ymax, int xoffset, int yoffset, 
               int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake = false,
               bool enableTrigFrame = true, bool enableTrigLine = true, bool enableTrigPixel = true);
-  void start();
+  void start();  // Renders one frame and returns
   void setParameters(int xmin, int xmax, int ymin, int ymax, int xoffset, int yoffset,
                      int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake = false,
                      bool enableTrigFrame = true, bool enableTrigLine = true, bool enableTrigPixel = true);

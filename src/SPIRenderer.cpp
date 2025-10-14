@@ -241,28 +241,26 @@ void SPIRenderer::setParameters(int xmin, int xmax, int ymin, int ymax, int xoff
 
 
 
-void SPIRenderer::draw()
+void SPIRenderer::drawFrame()
 {
-    for (int iFrame = 0; iFrame < nFrames; iFrame++)
-    {
-        printf("Drawing frame %d of %d\n", iFrame + 1, nFrames);
+    printf("Drawing frame %d\n", currentFrame + 1);
 
-        // Set frame trigger if enabled
-        if (ENABLE_TRIG_FRAME) {
-            GPIO.out_w1ts = (1U << PIN_NUM_TRIG_FRAME);
-        }
-        if (ENABLE_TRIG_LINE) {
-            GPIO.out_w1ts = (1U << PIN_NUM_TRIG_LINE);
-        }
-        if (ENABLE_TRIG_PIXEL) {
-            GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL);
-        }
+    // Set frame trigger if enabled
+    if (ENABLE_TRIG_FRAME) {
+        GPIO.out_w1ts = (1U << PIN_NUM_TRIG_FRAME);
+    }
+    if (ENABLE_TRIG_LINE) {
+        GPIO.out_w1ts = (1U << PIN_NUM_TRIG_LINE);
+    }
+    if (ENABLE_TRIG_PIXEL) {
+        GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL);
+    }
 
-        // add a small delay to ensure the frame start is registered
-        esp_rom_delay_us(1);
-        
-        // Track line number for snake pattern
-        int lineNumber = 0;
+    // add a small delay to ensure the frame start is registered
+    esp_rom_delay_us(1);
+    
+    // Track line number for snake pattern
+    int lineNumber = 0;
         
         // Loop over X
         for(int dacX = X_MIN; dacX <= X_MAX; dacX += STEP_X)
@@ -360,7 +358,20 @@ void SPIRenderer::draw()
         if (ENABLE_TRIG_FRAME) {
             GPIO.out_w1tc = (1U << PIN_NUM_TRIG_FRAME);
         }
+    
+    // Increment frame counter
+    currentFrame++;
+    if (currentFrame >= nFrames) {
+        currentFrame = 0;  // Loop back to frame 0
     }
+}
+
+////////////////////////////////////////////////////////////////
+// Start rendering - renders one frame
+////////////////////////////////////////////////////////////////
+void SPIRenderer::start()
+{
+  drawFrame();
 }
 
 /*
@@ -426,12 +437,3 @@ void SPIRenderer::draw()
 }
   */
 
-////////////////////////////////////////////////////////////////
-// Start rendering
-////////////////////////////////////////////////////////////////
-void SPIRenderer::start()
-{
-  printf("Starting to draw...\n");
-  draw();
-  printf("Done with drawing.\n");
-}
