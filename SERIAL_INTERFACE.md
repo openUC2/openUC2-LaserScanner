@@ -38,7 +38,7 @@ Retrieves device identification and status information.
 
 ### 2. Set Galvo Parameters - `/galvo_act`
 
-Updates the galvo scanner parameters for X/Y scanning.
+Updates the galvo scanner parameters for X/Y scanning and saves them to persistent storage.
 
 **Request:**
 ```json
@@ -60,6 +60,36 @@ Updates the galvo scanner parameters for X/Y scanning.
 ```json
 ++
 {"task":"/galvo_act","status":"success","qid":1}
+--
+```
+
+**Note:** Parameters are automatically saved to non-volatile storage and will be restored on device reboot.
+
+### 3. Get Galvo Parameters - `/galvo_get`
+
+Retrieves the current galvo scanner parameters.
+
+**Request:**
+```json
+{"task":"/galvo_get","qid":1}
+```
+
+**Response:**
+```json
+++
+{
+  "task":"/galvo_get",
+  "X_MIN":0,
+  "X_MAX":30000,
+  "Y_MIN":0,
+  "Y_MAX":30000,
+  "STEP":1000,
+  "tPixelDwelltime":1,
+  "nFrames":1,
+  "SNAKE":true,
+  "success":1,
+  "qid":1
+}
 --
 ```
 
@@ -152,6 +182,12 @@ ser.write((json.dumps(cmd) + '\n').encode())
 response = ser.readline().decode()
 print(response)
 
+# Get current galvo parameters
+cmd = {"task": "/galvo_get", "qid": 3}
+ser.write((json.dumps(cmd) + '\n').encode())
+response = ser.readline().decode()
+print(response)
+
 ser.close()
 ```
 
@@ -172,7 +208,8 @@ screen /dev/ttyUSB0 115200
 
 # Type JSON commands followed by Enter
 {"task":"/state_get","qid":1}
-{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":5000,"Y_MIN":0,"Y_MAX":5000,"STEP":50,"tPixelDwelltime":10,"nFrames":1,"SNAKE":true}
+{"task":"/galvo_get","qid":2}
+{"task":"/galvo_act","qid":3,"X_MIN":0,"X_MAX":5000,"Y_MIN":0,"Y_MAX":5000,"STEP":50,"tPixelDwelltime":10,"nFrames":1,"SNAKE":true}
 ```
 
 ## Notes
@@ -181,3 +218,5 @@ screen /dev/ttyUSB0 115200
 - The device continuously scans using the current parameters between command processing.
 - Parameters take effect immediately after the command is processed.
 - The `qid` (query ID) parameter is optional and is echoed back in the response for request tracking.
+- **Persistent Storage**: Parameters set via `/galvo_act` are automatically saved to non-volatile storage (NVS) and will be restored on device reboot.
+- Use `/galvo_get` to query the current parameters at any time.

@@ -27,6 +27,8 @@ Implementation follows the waveshare LED array pattern:
 - Uses ArduinoJson for parsing
 - Handles `/state_get` command for device identification
 - Handles `/galvo_act` command for parameter updates
+- **NEW**: Handles `/galvo_get` command for parameter retrieval
+- **NEW**: Persistent storage using ESP32 Preferences library
 - Returns status messages with `++` and `--` delimiters
 - Echoes `qid` in responses for request tracking
 - Processes serial input line-by-line
@@ -38,6 +40,14 @@ Responses follow UC2 standard:
 {"task":"/galvo_act","status":"success","qid":1}
 --
 ```
+
+### 6. Persistent Storage ✓
+Parameters are automatically saved to non-volatile storage (NVS) and restored on boot:
+- Uses ESP32 Preferences library
+- Namespace: "galvo"
+- Saved on every `/galvo_act` command
+- Loaded automatically during `app_main()` initialization
+- Default values used if no saved preferences exist
 
 ## Key Implementation Details
 
@@ -56,16 +66,41 @@ Responses follow UC2 standard:
 ```
 src/main.cpp:
 ├── Global variables (parameters, renderer, serial buffer)
+├── Preferences object for persistent storage
+├── saveParameters() - Save parameters to NVS
+├── loadParameters() - Load parameters from NVS
 ├── handleJSON() - Parse and dispatch commands
 │   ├── /state_get handler
-│   └── /galvo_act handler
+│   ├── /galvo_act handler (saves to preferences)
+│   └── /galvo_get handler (returns current parameters)
 ├── processSerial() - Read and buffer serial input
-└── app_main() - Initialize and main loop
+└── app_main() - Initialize, load preferences, and main loop
 
 src/SPIRenderer.cpp:
 └── draw() - Rendering loop with snake pattern support
     ├── Normal scanning: All lines scan Y_MIN → Y_MAX
     └── Snake scanning: Alternates direction (even: →, odd: ←)
+```
+
+### Persistent Storage Implementation
+Uses ESP32 Preferences library for non-volatile storage:
+
+**Save Operation (on `/galvo_act`):**
+```cpp
+preferences.begin("galvo", false);  // read-write mode
+preferences.putInt("X_MIN", X_MIN);
+preferences.putInt("X_MAX", X_MAX);
+// ... save all parameters
+preferences.end();
+```
+
+**Load Operation (on boot):**
+```cpp
+preferences.begin("galvo", true);   // read-only mode
+X_MIN = preferences.getInt("X_MIN", 0);  // default: 0
+X_MAX = preferences.getInt("X_MAX", 6000);  // default: 6000
+// ... load all parameters with defaults
+preferences.end();
 ```
 
 ### Snake Scanning Pattern

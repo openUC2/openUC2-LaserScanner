@@ -10,8 +10,12 @@
 #include "SPIRenderer.h"
 #include "esp_task_wdt.h"
 #include <ArduinoJson.h>
+#include <Preferences.h>
 
 static const char *TAG = "main";
+
+// Preferences object for persistent storage
+Preferences preferences;
 
 // Simple serial buffer
 String incomingData;
@@ -33,6 +37,42 @@ extern "C"
 {
   void app_main(void);
 }
+
+// -------------------------------------------------------------------
+// HELPER: Save parameters to preferences
+// -------------------------------------------------------------------
+void saveParameters() {
+  preferences.begin("galvo", false);
+  preferences.putInt("X_MIN", X_MIN);
+  preferences.putInt("X_MAX", X_MAX);
+  preferences.putInt("Y_MIN", Y_MIN);
+  preferences.putInt("Y_MAX", Y_MAX);
+  preferences.putInt("STEP", STEP);
+  preferences.putInt("tPixelDwell", tPixelDwelltime);
+  preferences.putInt("nFrames", nFrames);
+  preferences.putBool("SNAKE", SNAKE);
+  preferences.end();
+  ESP_LOGI(TAG, "Parameters saved to preferences");
+}
+
+// -------------------------------------------------------------------
+// HELPER: Load parameters from preferences
+// -------------------------------------------------------------------
+void loadParameters() {
+  preferences.begin("galvo", true); // read-only mode
+  X_MIN = preferences.getInt("X_MIN", 0);
+  X_MAX = preferences.getInt("X_MAX", 6000);
+  Y_MIN = preferences.getInt("Y_MIN", 0);
+  Y_MAX = preferences.getInt("Y_MAX", 6000);
+  STEP = preferences.getInt("STEP", 20);
+  tPixelDwelltime = preferences.getInt("tPixelDwell", 10);
+  nFrames = preferences.getInt("nFrames", 100);
+  SNAKE = preferences.getBool("SNAKE", false);
+  preferences.end();
+  ESP_LOGI(TAG, "Parameters loaded from preferences: X_MIN=%d X_MAX=%d Y_MIN=%d Y_MAX=%d STEP=%d tPixelDwell=%d nFrames=%d SNAKE=%d", 
+           X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames, SNAKE);
+}
+
 
 // -------------------------------------------------------------------
 // HELPER: Handle JSON commands
@@ -98,6 +138,9 @@ void handleJSON(const String &jsonString) {
     nFrames = newFrames;
     SNAKE = newSnake;
 
+    // Save parameters to preferences
+    saveParameters();
+
     // Update renderer if it exists
     if (renderer != nullptr) {
       renderer->setParameters(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames, SNAKE);
@@ -105,6 +148,35 @@ void handleJSON(const String &jsonString) {
 
     // Report success
     Serial.print("++\n{\"task\":\"/galvo_act\",\"status\":\"success\"");
+    if (qid != 0) {
+      Serial.print(",\"qid\":");
+      Serial.print(qid);
+    }
+    Serial.println("}\n--");
+    return;
+  }
+
+  // Handle /galvo_get command
+  if (strcmp(task, "/galvo_get") == 0) {
+    int qid = doc["qid"] | 0;
+    Serial.print("++\n{\"task\":\"/galvo_get\",");
+    Serial.print("\"X_MIN\":");
+    Serial.print(X_MIN);
+    Serial.print(",\"X_MAX\":");
+    Serial.print(X_MAX);
+    Serial.print(",\"Y_MIN\":");
+    Serial.print(Y_MIN);
+    Serial.print(",\"Y_MAX\":");
+    Serial.print(Y_MAX);
+    Serial.print(",\"STEP\":");
+    Serial.print(STEP);
+    Serial.print(",\"tPixelDwelltime\":");
+    Serial.print(tPixelDwelltime);
+    Serial.print(",\"nFrames\":");
+    Serial.print(nFrames);
+    Serial.print(",\"SNAKE\":");
+    Serial.print(SNAKE ? "true" : "false");
+    Serial.print(",\"success\":1");
     if (qid != 0) {
       Serial.print(",\"qid\":");
       Serial.print(qid);
@@ -144,10 +216,13 @@ void app_main()
   // Initialize Serial
   Serial.begin(115200);
   
+  // Load parameters from preferences
+  loadParameters();
+  
   // Disable the task watchdog for the main task
   esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(0));
 
-  // Create renderer with default parameters
+  // Create renderer with loaded parameters
   renderer = new SPIRenderer(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames, SNAKE);
   
   while (1) {

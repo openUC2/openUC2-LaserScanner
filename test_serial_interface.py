@@ -108,6 +108,27 @@ def test_galvo_act_partial(ser):
     print("✓ /galvo_act (partial parameters) test passed")
 
 
+def test_galvo_get(ser):
+    """Test the /galvo_get command to retrieve parameters."""
+    print("\n=== Testing /galvo_get command ===")
+    cmd = {"task": "/galvo_get", "qid": 5}
+    response = send_command(ser, cmd)
+    
+    # Validate response contains parameter fields
+    assert "X_MIN" in response, "Missing X_MIN in response"
+    assert "X_MAX" in response, "Missing X_MAX in response"
+    assert "Y_MIN" in response, "Missing Y_MIN in response"
+    assert "Y_MAX" in response, "Missing Y_MAX in response"
+    assert "STEP" in response, "Missing STEP in response"
+    assert "tPixelDwelltime" in response, "Missing tPixelDwelltime in response"
+    assert "nFrames" in response, "Missing nFrames in response"
+    assert "SNAKE" in response, "Missing SNAKE in response"
+    assert "success" in response, "Missing success field"
+    assert "qid" in response and "5" in response, "QID not echoed correctly"
+    print("✓ /galvo_get test passed")
+
+
+
 def test_invalid_json(ser):
     """Test handling of invalid JSON."""
     print("\n=== Testing invalid JSON ===")
@@ -129,7 +150,7 @@ def test_invalid_json(ser):
 def test_missing_task(ser):
     """Test handling of missing task field."""
     print("\n=== Testing missing task field ===")
-    cmd = {"qid": 5, "X_MIN": 0}
+    cmd = {"qid": 6, "X_MIN": 0}
     response = send_command(ser, cmd)
     
     assert "error" in response.lower(), "Expected error response for missing task"
@@ -140,7 +161,7 @@ def test_missing_task(ser):
 def test_unknown_task(ser):
     """Test handling of unknown task."""
     print("\n=== Testing unknown task ===")
-    cmd = {"task": "/unknown_command", "qid": 6}
+    cmd = {"task": "/unknown_command", "qid": 7}
     response = send_command(ser, cmd)
     
     assert "error" in response.lower(), "Expected error response for unknown task"
@@ -171,6 +192,7 @@ def main():
         test_galvo_act_full(ser)
         test_galvo_act_snake_pattern(ser)
         test_galvo_act_partial(ser)
+        test_galvo_get(ser)
         test_invalid_json(ser)
         test_missing_task(ser)
         test_unknown_task(ser)
