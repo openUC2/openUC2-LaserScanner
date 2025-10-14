@@ -384,6 +384,41 @@ void SPIRenderer::start()
   drawFrame();
 }
 
+////////////////////////////////////////////////////////////////
+// Set galvos to a stationary position (SINGLE mode)
+////////////////////////////////////////////////////////////////
+void SPIRenderer::setSinglePosition(int xpos, int ypos)
+{
+  // Clamp to valid DAC range (0-4095 for 12-bit DAC)
+  xpos = (xpos < 0) ? 0 : ((xpos > 4095) ? 4095 : xpos);
+  ypos = (ypos < 0) ? 0 : ((ypos > 4095) ? 4095 : ypos);
+  
+  // Prepare SPI transactions for X and Y
+  spi_transaction_t t1 = {};
+  t1.length = 16;
+  t1.flags = SPI_TRANS_USE_TXDATA;
+  t1.tx_data[0] = (0b00110000 | ((xpos >> 8) & 0x0F));
+  t1.tx_data[1] = (xpos & 0xFF);
+
+  spi_transaction_t t2 = {};
+  t2.length = 16;
+  t2.flags = SPI_TRANS_USE_TXDATA;
+  t2.tx_data[0] = (0b10110000 | ((ypos >> 8) & 0x0F));
+  t2.tx_data[1] = (ypos & 0xFF);
+
+  // Set LDAC low
+  GPIO.out_w1tc = (1U << PIN_NUM_LDAC);
+  
+  // Send X and Y values
+  spi_device_polling_transmit(spi, &t1);  // Send X value
+  spi_device_polling_transmit(spi, &t2);  // Send Y value
+  
+  // Latch both channels
+  gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 1);
+  
+  printf("Set single position: X=%d, Y=%d\n", xpos, ypos);
+}
+
 /*
 void SPIRenderer::draw()
 {

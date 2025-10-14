@@ -90,5 +90,6 @@ public:
   void setParameters(int xmin, int xmax, int ymin, int ymax, int xoffset, int yoffset,
                      int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake = false, bool sim = false,
                      bool enableTrigFrame = true, bool enableTrigLine = true, bool enableTrigPixel = true);
+  void setSinglePosition(int xpos, int ypos);  // Set galvos to a stationary position
 
 };
