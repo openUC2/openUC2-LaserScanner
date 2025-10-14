@@ -111,6 +111,7 @@ void handleJSON(const String &jsonString) {
 
   // Handle /state_get command
   if (strcmp(task, "/state_get") == 0) {
+    // {"task":"/state_get", "qid":1}
     int qid = doc["qid"] | 0;
     Serial.print("++\n{\"identifier_name\":\"UC2_GalvoScanner\",");
     Serial.print("\"identifier_id\":\"V1.0\",");
@@ -134,6 +135,11 @@ void handleJSON(const String &jsonString) {
 
   // Handle /galvo_act command
   if (strcmp(task, "/galvo_act") == 0) {
+    /*
+    {"task":"/galvo_act", "qid":1, "X_MIN":0, "X_MAX":2048, "Y_MIN":0, "Y_MAX":2048, "STEP_X":10, "STEP_Y":100, "tPixelDwelltime":0, "nFrames":1, "SNAKE":true}
+    
+    */
+
     int qid = doc["qid"] | 0;
     
     // Get parameters from JSON, use current values as defaults
@@ -153,6 +159,9 @@ void handleJSON(const String &jsonString) {
     } else {
       newStepX = doc["STEP_X"] | STEP_X;
       newStepY = doc["STEP_Y"] | STEP_Y;
+      Serial.println("Using STEP_X and STEP_Y:");
+      Serial.print("STEP_X: "); Serial.println(newStepX);
+      Serial.print("STEP_Y: "); Serial.println(newStepY);
     }
     
     int newDwell = doc["tPixelDwelltime"] | tPixelDwelltime;
