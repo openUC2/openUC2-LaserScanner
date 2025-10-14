@@ -285,7 +285,7 @@ void app_main()
     // Process any incoming serial commands
     processSerial();
     
-    // Run the renderer with current parameters
+    // Render one frame (allows serial processing between frames)
     renderer->start();
 
     // Give other tasks a chance to run
