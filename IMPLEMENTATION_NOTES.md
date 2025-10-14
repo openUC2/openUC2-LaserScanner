@@ -8,7 +8,7 @@ Implemented JSON command parsing using ArduinoJson library (v6.21.2), matching t
 ### 2. Command Structure ✓
 Following the exact format specified:
 ```json
-{"task":"/galvo_act", "qid":1, "X_MIN":0, "X_MAX":30000, "Y_MIN":0, "Y_MAX":30000, "STEP":1000, "tPixelDwelltime":1, "nFrames":1, "SNAKE":true}
+{"task":"/galvo_act", "qid":1, "X_MIN":0, "X_MAX":2048, "Y_MIN":0, "Y_MAX":2048, "STEP_X":10, "STEP_Y":10, "tPixelDwelltime":0, "nFrames":10, "SNAKE":true}
 ```
 
 ### 3. Parameters Adjustable ✓

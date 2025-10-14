@@ -25,15 +25,15 @@ SPIRenderer *renderer = nullptr;
 
 // Default parameters
 int X_MIN = 0;
-int X_MAX = 6000;
+int X_MAX = 2048;
 int Y_MIN = 0;
-int Y_MAX = 6000;
+int Y_MAX = 2048;
 int X_OFFSET = 0;  // X-axis offset
 int Y_OFFSET = 0;  // Y-axis offset
 int STEP_X = 20;   // Step size for X axis
 int STEP_Y = 20;   // Step size for Y axis
-int tPixelDwelltime = 10;
-int nFrames = 100;
+int tPixelDwelltime = 0;
+int nFrames = 10;
 bool SNAKE = false; // Snake scanning pattern (alternate line direction)
 bool ENABLE_TRIG_FRAME = true;  // Enable frame trigger
 bool ENABLE_TRIG_LINE = true;   // Enable line trigger
@@ -73,15 +73,15 @@ void saveParameters() {
 void loadParameters() {
   preferences.begin("galvo", true); // read-only mode
   X_MIN = preferences.getInt("X_MIN", 0);
-  X_MAX = preferences.getInt("X_MAX", 6000);
+  X_MAX = preferences.getInt("X_MAX", 2048);
   Y_MIN = preferences.getInt("Y_MIN", 0);
-  Y_MAX = preferences.getInt("Y_MAX", 6000);
+  Y_MAX = preferences.getInt("Y_MAX", 2048);
   X_OFFSET = preferences.getInt("X_OFFSET", 0);
   Y_OFFSET = preferences.getInt("Y_OFFSET", 0);
-  STEP_X = preferences.getInt("STEP_X", 20);
-  STEP_Y = preferences.getInt("STEP_Y", 20);
-  tPixelDwelltime = preferences.getInt("tPixelDwell", 10);
-  nFrames = preferences.getInt("nFrames", 100);
+  STEP_X = preferences.getInt("STEP_X", 10);
+  STEP_Y = preferences.getInt("STEP_Y", 10);
+  tPixelDwelltime = preferences.getInt("tPixelDwell", 0);
+  nFrames = preferences.getInt("nFrames", 10);
   SNAKE = preferences.getBool("SNAKE", false);
   ENABLE_TRIG_FRAME = preferences.getBool("TRIG_FRAME", true);
   ENABLE_TRIG_LINE = preferences.getBool("TRIG_LINE", true);
