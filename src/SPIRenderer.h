@@ -76,6 +76,7 @@ private:
   int nFrames = 1;
   int currentFrame = 0;  // Track current frame for continuous operation
   bool SNAKE = false; // Snake scanning pattern
+  bool SIM = false;   // Structured illumination mode
   bool ENABLE_TRIG_FRAME = true;
   bool ENABLE_TRIG_LINE = true;
   bool ENABLE_TRIG_PIXEL = true;
@@ -83,11 +84,11 @@ private:
 
 public:
   SPIRenderer(int xmin, int xmax, int ymin, int ymax, int xoffset, int yoffset, 
-              int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake = false,
+              int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake = false, bool sim = false,
               bool enableTrigFrame = true, bool enableTrigLine = true, bool enableTrigPixel = true);
   void start();  // Renders one frame and returns
   void setParameters(int xmin, int xmax, int ymin, int ymax, int xoffset, int yoffset,
-                     int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake = false,
+                     int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake = false, bool sim = false,
                      bool enableTrigFrame = true, bool enableTrigLine = true, bool enableTrigPixel = true);
 
 };

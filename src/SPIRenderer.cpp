@@ -121,7 +121,7 @@ void trigger_camera(int tPixelDwelltime, int triggerPin = PIN_NUM_TRIG_PIXEL)
 // The SPIRenderer class
 ////////////////////////////////////////////////////////////////
 SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax, int xoffset, int yoffset,
-                         int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake,
+                         int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake, bool sim,
                          bool enableTrigFrame, bool enableTrigLine, bool enableTrigPixel)
 {
   // Avoid variable shadowing:
@@ -141,12 +141,13 @@ SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax, int xoffset, in
   STEP_Y = stepy;
   nFrames = nFramesI;
   SNAKE = snake;
+  SIM = sim;
   ENABLE_TRIG_FRAME = enableTrigFrame;
   ENABLE_TRIG_LINE = enableTrigLine;
   ENABLE_TRIG_PIXEL = enableTrigPixel;
 
-  printf("Setting up renderer with parameters: X[%d,%d] Y[%d,%d] OFF[%d,%d] STEP[%d,%d] dwell:%d frames:%d SNAKE:%d TRIG[F:%d L:%d P:%d]\n",
-         xmin, xmax, ymin, ymax, xoffset, yoffset, stepx, stepy, tPixelDwelltime, nFrames, snake,
+  printf("Setting up renderer with parameters: X[%d,%d] Y[%d,%d] OFF[%d,%d] STEP[%d,%d] dwell:%d frames:%d SNAKE:%d SIM:%d TRIG[F:%d L:%d P:%d]\n",
+         xmin, xmax, ymin, ymax, xoffset, yoffset, stepx, stepy, tPixelDwelltime, nFrames, snake, sim,
          enableTrigFrame, enableTrigLine, enableTrigPixel);
 
   // Set up the laser pin
@@ -212,7 +213,7 @@ SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax, int xoffset, in
 }
 
 void SPIRenderer::setParameters(int xmin, int xmax, int ymin, int ymax, int xoffset, int yoffset,
-                                int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake,
+                                int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake, bool sim,
                                 bool enableTrigFrame, bool enableTrigLine, bool enableTrigPixel)
 {
   // Again, fix shadowing
@@ -230,12 +231,13 @@ void SPIRenderer::setParameters(int xmin, int xmax, int ymin, int ymax, int xoff
   STEP_Y = stepy;
   nFrames = nFramesI;
   SNAKE = snake;
+  SIM = sim;
   ENABLE_TRIG_FRAME = enableTrigFrame;
   ENABLE_TRIG_LINE = enableTrigLine;
   ENABLE_TRIG_PIXEL = enableTrigPixel;
 
-  printf("Setting parameters: X[%d,%d] Y[%d,%d] OFF[%d,%d] STEP[%d,%d] dwell:%d frames:%d SNAKE:%d TRIG[F:%d L:%d P:%d]\n",
-         xmin, xmax, ymin, ymax, xoffset, yoffset, stepx, stepy, tPixelDwelltime, nFrames, snake,
+  printf("Setting parameters: X[%d,%d] Y[%d,%d] OFF[%d,%d] STEP[%d,%d] dwell:%d frames:%d SNAKE:%d SIM:%d TRIG[F:%d L:%d P:%d]\n",
+         xmin, xmax, ymin, ymax, xoffset, yoffset, stepx, stepy, tPixelDwelltime, nFrames, snake, sim,
          enableTrigFrame, enableTrigLine, enableTrigPixel);
 }
 
@@ -259,21 +261,29 @@ void SPIRenderer::drawFrame()
     // add a small delay to ensure the frame start is registered
     esp_rom_delay_us(1);
     
+    // Calculate SIM mode Y offset for this frame
+    // In SIM mode, shift pattern vertically by STEP_Y/nFrames per frame
+    int simYOffset = 0;
+    if (SIM && nFrames > 0) {
+        // Calculate fractional offset: (STEP_Y / nFrames) * currentFrame
+        simYOffset = (STEP_Y * currentFrame) / nFrames;
+    }
+    
     // Track line number for snake pattern
     int lineNumber = 0;
         
         // Loop over X
         for(int dacX = X_MIN; dacX <= X_MAX; dacX += STEP_X)
         {
-            // Determine Y scanning direction based on SNAKE mode and line number
+            // Determine Y scanning direction based on SNAKE or SIM mode
             int yStart, yEnd, yStep;
-            if (SNAKE && (lineNumber % 2 == 1)) {
+            if ((SNAKE || SIM) && (lineNumber % 2 == 1)) {
                 // Odd lines: scan from Y_MAX to Y_MIN (reverse)
                 yStart = Y_MAX;
                 yEnd = Y_MIN;
                 yStep = -STEP_Y;
             } else {
-                // Even lines (or non-snake mode): scan from Y_MIN to Y_MAX (forward)
+                // Even lines (or non-snake/SIM mode): scan from Y_MIN to Y_MAX (forward)
                 yStart = Y_MIN;
                 yEnd = Y_MAX;
                 yStep = STEP_Y;
@@ -298,7 +308,7 @@ void SPIRenderer::drawFrame()
                 
                 // Apply offsets to DAC values
                 int dacXWithOffset = dacX + X_OFFSET;
-                int dacYWithOffset = dacY + Y_OFFSET;
+                int dacYWithOffset = dacY + Y_OFFSET + simYOffset;  // Add SIM offset
                 
                 // Clamp to valid DAC range (0-4095 for 12-bit DAC)
                 dacXWithOffset = (dacXWithOffset < 0) ? 0 : ((dacXWithOffset > 4095) ? 4095 : dacXWithOffset);
