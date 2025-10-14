@@ -235,10 +235,10 @@ void SPIRenderer::draw()
 
         // add a small delay to ensure the frame start is registered
         esp_rom_delay_us(1);
-        // Loop over X
+        // Loop over X 
         for(int dacX = X_MIN; dacX <= X_MAX; dacX += STEP)
         {
-            // Loop over Y
+            // Loop over Y pixels
             for(int dacY = Y_MIN; dacY <= Y_MAX; dacY += STEP)
             {
                 // Clear triggers in one go
@@ -278,6 +278,8 @@ void SPIRenderer::draw()
             // Possibly delay
             // Clear line trigger
             GPIO.out_w1tc = (1U << PIN_NUM_TRIG_LINE);
+            // delay to see if jitter goes away 
+            //esp_rom_delay_us(50);
         }
         // End of frame: clear triggers
         GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL) |
