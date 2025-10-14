@@ -28,10 +28,16 @@ int X_MIN = 0;
 int X_MAX = 6000;
 int Y_MIN = 0;
 int Y_MAX = 6000;
-int STEP = 20;
+int X_OFFSET = 0;  // X-axis offset
+int Y_OFFSET = 0;  // Y-axis offset
+int STEP_X = 20;   // Step size for X axis
+int STEP_Y = 20;   // Step size for Y axis
 int tPixelDwelltime = 10;
 int nFrames = 100;
 bool SNAKE = false; // Snake scanning pattern (alternate line direction)
+bool ENABLE_TRIG_FRAME = true;  // Enable frame trigger
+bool ENABLE_TRIG_LINE = true;   // Enable line trigger
+bool ENABLE_TRIG_PIXEL = true;  // Enable pixel trigger
 
 extern "C"
 {
@@ -47,10 +53,16 @@ void saveParameters() {
   preferences.putInt("X_MAX", X_MAX);
   preferences.putInt("Y_MIN", Y_MIN);
   preferences.putInt("Y_MAX", Y_MAX);
-  preferences.putInt("STEP", STEP);
+  preferences.putInt("X_OFFSET", X_OFFSET);
+  preferences.putInt("Y_OFFSET", Y_OFFSET);
+  preferences.putInt("STEP_X", STEP_X);
+  preferences.putInt("STEP_Y", STEP_Y);
   preferences.putInt("tPixelDwell", tPixelDwelltime);
   preferences.putInt("nFrames", nFrames);
   preferences.putBool("SNAKE", SNAKE);
+  preferences.putBool("TRIG_FRAME", ENABLE_TRIG_FRAME);
+  preferences.putBool("TRIG_LINE", ENABLE_TRIG_LINE);
+  preferences.putBool("TRIG_PIXEL", ENABLE_TRIG_PIXEL);
   preferences.end();
   ESP_LOGI(TAG, "Parameters saved to preferences");
 }
@@ -64,13 +76,19 @@ void loadParameters() {
   X_MAX = preferences.getInt("X_MAX", 6000);
   Y_MIN = preferences.getInt("Y_MIN", 0);
   Y_MAX = preferences.getInt("Y_MAX", 6000);
-  STEP = preferences.getInt("STEP", 20);
+  X_OFFSET = preferences.getInt("X_OFFSET", 0);
+  Y_OFFSET = preferences.getInt("Y_OFFSET", 0);
+  STEP_X = preferences.getInt("STEP_X", 20);
+  STEP_Y = preferences.getInt("STEP_Y", 20);
   tPixelDwelltime = preferences.getInt("tPixelDwell", 10);
   nFrames = preferences.getInt("nFrames", 100);
   SNAKE = preferences.getBool("SNAKE", false);
+  ENABLE_TRIG_FRAME = preferences.getBool("TRIG_FRAME", true);
+  ENABLE_TRIG_LINE = preferences.getBool("TRIG_LINE", true);
+  ENABLE_TRIG_PIXEL = preferences.getBool("TRIG_PIXEL", true);
   preferences.end();
-  ESP_LOGI(TAG, "Parameters loaded from preferences: X_MIN=%d X_MAX=%d Y_MIN=%d Y_MAX=%d STEP=%d tPixelDwell=%d nFrames=%d SNAKE=%d", 
-           X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames, SNAKE);
+  ESP_LOGI(TAG, "Parameters loaded from preferences: X_MIN=%d X_MAX=%d Y_MIN=%d Y_MAX=%d X_OFF=%d Y_OFF=%d STEP_X=%d STEP_Y=%d tPixelDwell=%d nFrames=%d SNAKE=%d TRIG_F=%d TRIG_L=%d TRIG_P=%d", 
+           X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y, tPixelDwelltime, nFrames, SNAKE, ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL);
 }
 
 
@@ -123,27 +141,51 @@ void handleJSON(const String &jsonString) {
     int newXMax = doc["X_MAX"] | X_MAX;
     int newYMin = doc["Y_MIN"] | Y_MIN;
     int newYMax = doc["Y_MAX"] | Y_MAX;
-    int newStep = doc["STEP"] | STEP;
+    int newXOffset = doc["X_OFFSET"] | X_OFFSET;
+    int newYOffset = doc["Y_OFFSET"] | Y_OFFSET;
+    
+    // Handle both STEP (backward compatibility) and STEP_X/STEP_Y
+    int newStepX, newStepY;
+    if (doc.containsKey("STEP")) {
+      int stepValue = doc["STEP"];
+      newStepX = stepValue;
+      newStepY = stepValue;
+    } else {
+      newStepX = doc["STEP_X"] | STEP_X;
+      newStepY = doc["STEP_Y"] | STEP_Y;
+    }
+    
     int newDwell = doc["tPixelDwelltime"] | tPixelDwelltime;
     int newFrames = doc["nFrames"] | nFrames;
     bool newSnake = doc["SNAKE"] | SNAKE;
+    bool newTrigFrame = doc["ENABLE_TRIG_FRAME"] | ENABLE_TRIG_FRAME;
+    bool newTrigLine = doc["ENABLE_TRIG_LINE"] | ENABLE_TRIG_LINE;
+    bool newTrigPixel = doc["ENABLE_TRIG_PIXEL"] | ENABLE_TRIG_PIXEL;
 
     // Update global parameters
     X_MIN = newXMin;
     X_MAX = newXMax;
     Y_MIN = newYMin;
     Y_MAX = newYMax;
-    STEP = newStep;
+    X_OFFSET = newXOffset;
+    Y_OFFSET = newYOffset;
+    STEP_X = newStepX;
+    STEP_Y = newStepY;
     tPixelDwelltime = newDwell;
     nFrames = newFrames;
     SNAKE = newSnake;
+    ENABLE_TRIG_FRAME = newTrigFrame;
+    ENABLE_TRIG_LINE = newTrigLine;
+    ENABLE_TRIG_PIXEL = newTrigPixel;
 
     // Save parameters to preferences
     saveParameters();
 
     // Update renderer if it exists
     if (renderer != nullptr) {
-      renderer->setParameters(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames, SNAKE);
+      renderer->setParameters(X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y, 
+                              tPixelDwelltime, nFrames, SNAKE, 
+                              ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL);
     }
 
     // Report success
@@ -168,14 +210,26 @@ void handleJSON(const String &jsonString) {
     Serial.print(Y_MIN);
     Serial.print(",\"Y_MAX\":");
     Serial.print(Y_MAX);
-    Serial.print(",\"STEP\":");
-    Serial.print(STEP);
+    Serial.print(",\"X_OFFSET\":");
+    Serial.print(X_OFFSET);
+    Serial.print(",\"Y_OFFSET\":");
+    Serial.print(Y_OFFSET);
+    Serial.print(",\"STEP_X\":");
+    Serial.print(STEP_X);
+    Serial.print(",\"STEP_Y\":");
+    Serial.print(STEP_Y);
     Serial.print(",\"tPixelDwelltime\":");
     Serial.print(tPixelDwelltime);
     Serial.print(",\"nFrames\":");
     Serial.print(nFrames);
     Serial.print(",\"SNAKE\":");
     Serial.print(SNAKE ? "true" : "false");
+    Serial.print(",\"ENABLE_TRIG_FRAME\":");
+    Serial.print(ENABLE_TRIG_FRAME ? "true" : "false");
+    Serial.print(",\"ENABLE_TRIG_LINE\":");
+    Serial.print(ENABLE_TRIG_LINE ? "true" : "false");
+    Serial.print(",\"ENABLE_TRIG_PIXEL\":");
+    Serial.print(ENABLE_TRIG_PIXEL ? "true" : "false");
     Serial.print(",\"success\":1");
     if (qid != 0) {
       Serial.print(",\"qid\":");
@@ -223,7 +277,9 @@ void app_main()
   esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(0));
 
   // Create renderer with loaded parameters
-  renderer = new SPIRenderer(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames, SNAKE);
+  renderer = new SPIRenderer(X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y, 
+                             tPixelDwelltime, nFrames, SNAKE, 
+                             ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL);
   
   while (1) {
     // Process any incoming serial commands

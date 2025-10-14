@@ -120,26 +120,34 @@ void trigger_camera(int tPixelDwelltime, int triggerPin = PIN_NUM_TRIG_PIXEL)
 ////////////////////////////////////////////////////////////////
 // The SPIRenderer class
 ////////////////////////////////////////////////////////////////
-SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax,
-                         int step, int tPixelDwelltime, int nFramesI, bool snake)
+SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax, int xoffset, int yoffset,
+                         int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake,
+                         bool enableTrigFrame, bool enableTrigLine, bool enableTrigPixel)
 {
   // Avoid variable shadowing:
   this->tPixelDwelltime = tPixelDwelltime;
 
   // The number of steps in x and y
-  nX = (xmax - xmin) / step;
-  nY = (ymax - ymin) / step;
+  nX = (xmax - xmin) / stepx;
+  nY = (ymax - ymin) / stepy;
 
   X_MIN = xmin;
   X_MAX = xmax;
   Y_MIN = ymin;
   Y_MAX = ymax;
-  STEP = step;
+  X_OFFSET = xoffset;
+  Y_OFFSET = yoffset;
+  STEP_X = stepx;
+  STEP_Y = stepy;
   nFrames = nFramesI;
   SNAKE = snake;
+  ENABLE_TRIG_FRAME = enableTrigFrame;
+  ENABLE_TRIG_LINE = enableTrigLine;
+  ENABLE_TRIG_PIXEL = enableTrigPixel;
 
-  printf("Setting up renderer with parameters: %d %d %d %d %d %d %d SNAKE:%d\n",
-         xmin, xmax, ymin, ymax, step, tPixelDwelltime, nFrames, snake);
+  printf("Setting up renderer with parameters: X[%d,%d] Y[%d,%d] OFF[%d,%d] STEP[%d,%d] dwell:%d frames:%d SNAKE:%d TRIG[F:%d L:%d P:%d]\n",
+         xmin, xmax, ymin, ymax, xoffset, yoffset, stepx, stepy, tPixelDwelltime, nFrames, snake,
+         enableTrigFrame, enableTrigLine, enableTrigPixel);
 
   // Set up the laser pin
   gpio_set_direction((gpio_num_t)PIN_NUM_LASER, GPIO_MODE_OUTPUT);
@@ -203,25 +211,34 @@ SPIRenderer::SPIRenderer(int xmin, int xmax, int ymin, int ymax,
   printf("SPI Bus init ret = %s\n", esp_err_to_name(ret));
 }
 
-void SPIRenderer::setParameters(int xmin, int xmax, int ymin, int ymax,
-                                int step, int tPixelDwelltime, int nFramesI, bool snake)
+void SPIRenderer::setParameters(int xmin, int xmax, int ymin, int ymax, int xoffset, int yoffset,
+                                int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake,
+                                bool enableTrigFrame, bool enableTrigLine, bool enableTrigPixel)
 {
   // Again, fix shadowing
   this->tPixelDwelltime = tPixelDwelltime;
 
-  nX = (xmax - xmin) / step;
-  nY = (ymax - ymin) / step;
+  nX = (xmax - xmin) / stepx;
+  nY = (ymax - ymin) / stepy;
   X_MIN = xmin;
   X_MAX = xmax;
   Y_MIN = ymin;
   Y_MAX = ymax;
-  STEP = step;
+  X_OFFSET = xoffset;
+  Y_OFFSET = yoffset;
+  STEP_X = stepx;
+  STEP_Y = stepy;
   nFrames = nFramesI;
   SNAKE = snake;
+  ENABLE_TRIG_FRAME = enableTrigFrame;
+  ENABLE_TRIG_LINE = enableTrigLine;
+  ENABLE_TRIG_PIXEL = enableTrigPixel;
 
-  printf("Setting up renderer with parameters: %d %d %d %d %d %d %d SNAKE:%d\n",
-         xmin, xmax, ymin, ymax, step, tPixelDwelltime, nFrames, snake);
+  printf("Setting parameters: X[%d,%d] Y[%d,%d] OFF[%d,%d] STEP[%d,%d] dwell:%d frames:%d SNAKE:%d TRIG[F:%d L:%d P:%d]\n",
+         xmin, xmax, ymin, ymax, xoffset, yoffset, stepx, stepy, tPixelDwelltime, nFrames, snake,
+         enableTrigFrame, enableTrigLine, enableTrigPixel);
 }
+
 
 
 void SPIRenderer::draw()
@@ -230,10 +247,16 @@ void SPIRenderer::draw()
     {
         printf("Drawing frame %d of %d\n", iFrame + 1, nFrames);
 
-        // Directly set all triggers high to mark frame start
-        GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL) |
-                        (1U << PIN_NUM_TRIG_LINE) |
-                        (1U << PIN_NUM_TRIG_FRAME);
+        // Set frame trigger if enabled
+        if (ENABLE_TRIG_FRAME) {
+            GPIO.out_w1ts = (1U << PIN_NUM_TRIG_FRAME);
+        }
+        if (ENABLE_TRIG_LINE) {
+            GPIO.out_w1ts = (1U << PIN_NUM_TRIG_LINE);
+        }
+        if (ENABLE_TRIG_PIXEL) {
+            GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL);
+        }
 
         // add a small delay to ensure the frame start is registered
         esp_rom_delay_us(1);
@@ -242,7 +265,7 @@ void SPIRenderer::draw()
         int lineNumber = 0;
         
         // Loop over X
-        for(int dacX = X_MIN; dacX <= X_MAX; dacX += STEP)
+        for(int dacX = X_MIN; dacX <= X_MAX; dacX += STEP_X)
         {
             // Determine Y scanning direction based on SNAKE mode and line number
             int yStart, yEnd, yStep;
@@ -250,12 +273,12 @@ void SPIRenderer::draw()
                 // Odd lines: scan from Y_MAX to Y_MIN (reverse)
                 yStart = Y_MAX;
                 yEnd = Y_MIN;
-                yStep = -STEP;
+                yStep = -STEP_Y;
             } else {
                 // Even lines (or non-snake mode): scan from Y_MIN to Y_MAX (forward)
                 yStart = Y_MIN;
                 yEnd = Y_MAX;
-                yStep = STEP;
+                yStep = STEP_Y;
             }
             
             // Loop over Y with direction determined above
@@ -263,23 +286,38 @@ void SPIRenderer::draw()
                 (yStep > 0) ? (dacY <= yEnd) : (dacY >= yEnd); 
                 dacY += yStep)
             {
-                // Clear triggers in one go
-                GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL) |
-                                (1U << PIN_NUM_TRIG_LINE) |
-                                (1U << PIN_NUM_TRIG_FRAME);
+                // Clear triggers if enabled
+                if (ENABLE_TRIG_PIXEL) {
+                    GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL);
+                }
+                if (ENABLE_TRIG_LINE) {
+                    GPIO.out_w1tc = (1U << PIN_NUM_TRIG_LINE);
+                }
+                if (ENABLE_TRIG_FRAME) {
+                    GPIO.out_w1tc = (1U << PIN_NUM_TRIG_FRAME);
+                }
                 esp_rom_delay_us(1);
+                
+                // Apply offsets to DAC values
+                int dacXWithOffset = dacX + X_OFFSET;
+                int dacYWithOffset = dacY + Y_OFFSET;
+                
+                // Clamp to valid DAC range (0-4095 for 12-bit DAC)
+                dacXWithOffset = (dacXWithOffset < 0) ? 0 : ((dacXWithOffset > 4095) ? 4095 : dacXWithOffset);
+                dacYWithOffset = (dacYWithOffset < 0) ? 0 : ((dacYWithOffset > 4095) ? 4095 : dacYWithOffset);
+                
                 // Prepare SPI transactions for X and Y
                 spi_transaction_t t1 = {};
                 t1.length = 16;
                 t1.flags = SPI_TRANS_USE_TXDATA;
-                t1.tx_data[0] = (0b00110000 | ((dacX >> 8) & 0x0F));
-                t1.tx_data[1] = (dacX & 0xFF);
+                t1.tx_data[0] = (0b00110000 | ((dacXWithOffset >> 8) & 0x0F));
+                t1.tx_data[1] = (dacXWithOffset & 0xFF);
 
                 spi_transaction_t t2 = {};
                 t2.length = 16;
                 t2.flags = SPI_TRANS_USE_TXDATA;
-                t2.tx_data[0] = (0b10110000 | ((dacY >> 8) & 0x0F));
-                t2.tx_data[1] = (dacY & 0xFF);
+                t2.tx_data[0] = (0b10110000 | ((dacYWithOffset >> 8) & 0x0F));
+                t2.tx_data[1] = (dacYWithOffset & 0xFF);
 
                 // Fewer LDAC toggles: latch once per pixel
                 GPIO.out_w1tc = (1U << PIN_NUM_LDAC);  // hold LDAC low
@@ -288,26 +326,40 @@ void SPIRenderer::draw()
                 GPIO.out_w1ts = (1U << PIN_NUM_LDAC);  // latch both channels
 
                 // Optionally set a trigger directly for the pixel
-                GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL);
+                if (ENABLE_TRIG_PIXEL) {
+                    GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL);
+                }
                 // Delay if needed: 
                 esp_rom_delay_us(tPixelDwelltime);
 
                 // Clear pixel trigger again
-                GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL);
+                if (ENABLE_TRIG_PIXEL) {
+                    GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL);
+                }
             }
             // Optionally set line trigger here
-            GPIO.out_w1ts = (1U << PIN_NUM_TRIG_LINE);
+            if (ENABLE_TRIG_LINE) {
+                GPIO.out_w1ts = (1U << PIN_NUM_TRIG_LINE);
+            }
             // Possibly delay
             // Clear line trigger
-            GPIO.out_w1tc = (1U << PIN_NUM_TRIG_LINE);
+            if (ENABLE_TRIG_LINE) {
+                GPIO.out_w1tc = (1U << PIN_NUM_TRIG_LINE);
+            }
             
             // Increment line number for snake pattern tracking
             lineNumber++;
         }
         // End of frame: clear triggers
-        GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL) |
-                        (1U << PIN_NUM_TRIG_LINE) |
-                        (1U << PIN_NUM_TRIG_FRAME);
+        if (ENABLE_TRIG_PIXEL) {
+            GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL);
+        }
+        if (ENABLE_TRIG_LINE) {
+            GPIO.out_w1tc = (1U << PIN_NUM_TRIG_LINE);
+        }
+        if (ENABLE_TRIG_FRAME) {
+            GPIO.out_w1tc = (1U << PIN_NUM_TRIG_FRAME);
+        }
     }
 }
 
