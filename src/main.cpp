@@ -139,8 +139,10 @@ void handleJSON(const String &jsonString) {
   // Handle /galvo_act command
   if (strcmp(task, "/galvo_act") == 0) {
     /*
-    {"task":"/galvo_act", "qid":1, "X_MIN":0, "X_MAX":2048, "Y_MIN":0, "Y_MAX":2048, "STEP_X":10, "STEP_Y":100, "tPixelDwelltime":0, "nFrames":1, "SNAKE":true}
+    {"task":"/galvo_act", "qid":1, "X_MIN":0, "X_MAX":512, "Y_MIN":0, "Y_MAX":512, "STEP_X":8, "STEP_Y":8, "tPixelDwelltime":2, "nFrames":10, "SNAKE":false}
     
+      {"task":"/galvo_act", "qid":1, "X_MIN":512, "X_MAX":512, "Y_MIN":, "Y_MAX":512, "nFrames":10, "SNAKE":false}
+
     */
 
     int qid = doc["qid"] | 0;
