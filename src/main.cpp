@@ -40,6 +40,11 @@ bool ENABLE_TRIG_FRAME = true;  // Enable frame trigger
 bool ENABLE_TRIG_LINE = true;   // Enable line trigger
 bool ENABLE_TRIG_PIXEL = true;  // Enable pixel trigger
 
+// Single point positioning mode
+bool SINGLE = false;  // Single point mode (stationary position)
+int X_POS = 2048;     // X position for single point mode (0-4095)
+int Y_POS = 2048;     // Y position for single point mode (0-4095)
+
 extern "C"
 {
   void app_main(void);
@@ -65,6 +70,9 @@ void saveParameters() {
   preferences.putBool("TRIG_FRAME", ENABLE_TRIG_FRAME);
   preferences.putBool("TRIG_LINE", ENABLE_TRIG_LINE);
   preferences.putBool("TRIG_PIXEL", ENABLE_TRIG_PIXEL);
+  preferences.putBool("SINGLE", SINGLE);
+  preferences.putInt("X_POS", X_POS);
+  preferences.putInt("Y_POS", Y_POS);
   preferences.end();
   ESP_LOGI(TAG, "Parameters saved to preferences");
 }
@@ -89,9 +97,12 @@ void loadParameters() {
   ENABLE_TRIG_FRAME = preferences.getBool("TRIG_FRAME", true);
   ENABLE_TRIG_LINE = preferences.getBool("TRIG_LINE", true);
   ENABLE_TRIG_PIXEL = preferences.getBool("TRIG_PIXEL", true);
+  SINGLE = preferences.getBool("SINGLE", false);
+  X_POS = preferences.getInt("X_POS", 2048);
+  Y_POS = preferences.getInt("Y_POS", 2048);
   preferences.end();
-  ESP_LOGI(TAG, "Parameters loaded from preferences: X_MIN=%d X_MAX=%d Y_MIN=%d Y_MAX=%d X_OFF=%d Y_OFF=%d STEP_X=%d STEP_Y=%d tPixelDwell=%d nFrames=%d SNAKE=%d SIM=%d TRIG_F=%d TRIG_L=%d TRIG_P=%d", 
-           X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y, tPixelDwelltime, nFrames, SNAKE, SIM, ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL);
+  ESP_LOGI(TAG, "Parameters loaded from preferences: X_MIN=%d X_MAX=%d Y_MIN=%d Y_MAX=%d X_OFF=%d Y_OFF=%d STEP_X=%d STEP_Y=%d tPixelDwell=%d nFrames=%d SNAKE=%d SIM=%d TRIG_F=%d TRIG_L=%d TRIG_P=%d SINGLE=%d X_POS=%d Y_POS=%d", 
+           X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y, tPixelDwelltime, nFrames, SNAKE, SIM, ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL, SINGLE, X_POS, Y_POS);
 }
 
 
@@ -140,10 +151,41 @@ void handleJSON(const String &jsonString) {
   if (strcmp(task, "/galvo_act") == 0) {
     /*
     {"task":"/galvo_act", "qid":1, "X_MIN":0, "X_MAX":2048, "Y_MIN":0, "Y_MAX":2048, "STEP_X":10, "STEP_Y":100, "tPixelDwelltime":0, "nFrames":1, "SNAKE":true}
-    
+    {"task":"/galvo_act", "qid":1, "X_POS":1000, "Y_POS":2048, "SINGLE":true}
     */
 
     int qid = doc["qid"] | 0;
+    
+    // Check if SINGLE mode is being set
+    if (doc.containsKey("SINGLE")) {
+      bool newSingle = doc["SINGLE"];
+      SINGLE = newSingle;
+      
+      if (SINGLE) {
+        // In single mode, get X_POS and Y_POS
+        X_POS = doc["X_POS"] | X_POS;
+        Y_POS = doc["Y_POS"] | Y_POS;
+        
+        // Clamp to valid DAC range
+        X_POS = (X_POS < 0) ? 0 : ((X_POS > 4095) ? 4095 : X_POS);
+        Y_POS = (Y_POS < 0) ? 0 : ((Y_POS > 4095) ? 4095 : Y_POS);
+        
+        // Save parameters
+        saveParameters();
+        
+        // Report success
+        Serial.print("++\n{\"task\":\"/galvo_act\",\"status\":\"success\",\"mode\":\"single\",\"X_POS\":");
+        Serial.print(X_POS);
+        Serial.print(",\"Y_POS\":");
+        Serial.print(Y_POS);
+        if (qid != 0) {
+          Serial.print(",\"qid\":");
+          Serial.print(qid);
+        }
+        Serial.println("}\n--");
+        return;
+      }
+    }
     
     // Get parameters from JSON, use current values as defaults
     int newXMin = doc["X_MIN"] | X_MIN;
@@ -174,6 +216,11 @@ void handleJSON(const String &jsonString) {
     bool newTrigFrame = doc["ENABLE_TRIG_FRAME"] | ENABLE_TRIG_FRAME;
     bool newTrigLine = doc["ENABLE_TRIG_LINE"] | ENABLE_TRIG_LINE;
     bool newTrigPixel = doc["ENABLE_TRIG_PIXEL"] | ENABLE_TRIG_PIXEL;
+
+    // If SINGLE wasn't explicitly set to false, keep scanning mode
+    if (!doc.containsKey("SINGLE")) {
+      SINGLE = false;  // Default to scanning mode when setting scan parameters
+    }
 
     // Update global parameters
     X_MIN = newXMin;
@@ -240,6 +287,12 @@ void handleJSON(const String &jsonString) {
     Serial.print(SNAKE ? "true" : "false");
     Serial.print(",\"SIM\":");
     Serial.print(SIM ? "true" : "false");
+    Serial.print(",\"SINGLE\":");
+    Serial.print(SINGLE ? "true" : "false");
+    Serial.print(",\"X_POS\":");
+    Serial.print(X_POS);
+    Serial.print(",\"Y_POS\":");
+    Serial.print(Y_POS);
     Serial.print(",\"ENABLE_TRIG_FRAME\":");
     Serial.print(ENABLE_TRIG_FRAME ? "true" : "false");
     Serial.print(",\"ENABLE_TRIG_LINE\":");
@@ -301,11 +354,17 @@ void app_main()
     // Process any incoming serial commands
     processSerial();
     
-    // Render one frame (allows serial processing between frames)
-    renderer->start();
-
-    // Give other tasks a chance to run
-    vTaskDelay(pdMS_TO_TICKS(10)); // Delay for 10 milliseconds
+    if (SINGLE) {
+      // In SINGLE mode, set galvos to stationary position
+      renderer->setSinglePosition(X_POS, Y_POS);
+      // Longer delay in single mode since we're not scanning
+      vTaskDelay(pdMS_TO_TICKS(100));
+    } else {
+      // Render one frame (allows serial processing between frames)
+      renderer->start();
+      // Give other tasks a chance to run
+      vTaskDelay(pdMS_TO_TICKS(10)); // Delay for 10 milliseconds
+    }
   }
 }
 
