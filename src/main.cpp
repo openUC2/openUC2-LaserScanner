@@ -20,6 +20,19 @@ Preferences preferences;
 // Simple serial buffer
 String incomingData;
 
+// Binary protocol state
+enum BinaryProtocolState {
+  BINARY_IDLE,
+  BINARY_RECEIVING_HEADER,
+  BINARY_RECEIVING_DATA
+};
+
+BinaryProtocolState binaryState = BINARY_IDLE;
+uint16_t binaryExpectedPoints = 0;
+uint16_t binaryReceivedPoints = 0;
+uint8_t binaryBuffer[4];  // Buffer for one point (2 bytes X + 2 bytes Y)
+uint8_t binaryBufferIndex = 0;
+
 // Renderer pointer
 SPIRenderer *renderer = nullptr;
 
@@ -308,8 +321,126 @@ void handleJSON(const String &jsonString) {
     return;
   }
 
+  // Handle /pointcloud_clear command
+  if (strcmp(task, "/pointcloud_clear") == 0) {
+    int qid = doc["qid"] | 0;
+    if (renderer != nullptr) {
+      renderer->clearPointCloud();
+      Serial.print("++\n{\"task\":\"/pointcloud_clear\",\"status\":\"success\"");
+      if (qid != 0) {
+        Serial.print(",\"qid\":");
+        Serial.print(qid);
+      }
+      Serial.println("}\n--");
+    } else {
+      Serial.println("{\"status\":\"error\",\"info\":\"Renderer not initialized\"}");
+    }
+    return;
+  }
+
+  // Handle /pointcloud_render command
+  if (strcmp(task, "/pointcloud_render") == 0) {
+    int qid = doc["qid"] | 0;
+    if (renderer != nullptr) {
+      renderer->renderPointCloud();
+      Serial.print("++\n{\"task\":\"/pointcloud_render\",\"status\":\"success\"");
+      if (qid != 0) {
+        Serial.print(",\"qid\":");
+        Serial.print(qid);
+      }
+      Serial.println("}\n--");
+    } else {
+      Serial.println("{\"status\":\"error\",\"info\":\"Renderer not initialized\"}");
+    }
+    return;
+  }
+
+  // Handle /pointcloud_start command - initiates binary transfer
+  if (strcmp(task, "/pointcloud_start") == 0) {
+    /*
+    Binary transfer protocol:
+    1. Send JSON: {"task":"/pointcloud_start", "numPoints":1000, "qid":1}
+    2. ESP responds with ready
+    3. Send binary data: [X1_low, X1_high, Y1_low, Y1_high, X2_low, X2_high, Y2_low, Y2_high, ...]
+       Each coordinate is 16-bit little-endian (0-4095)
+    4. ESP responds when complete
+    */
+    int qid = doc["qid"] | 0;
+    int numPoints = doc["numPoints"] | 0;
+    
+    if (numPoints <= 0 || numPoints > 10000) {
+      Serial.println("{\"status\":\"error\",\"info\":\"Invalid numPoints (must be 1-10000)\"}");
+      return;
+    }
+    
+    if (renderer == nullptr) {
+      Serial.println("{\"status\":\"error\",\"info\":\"Renderer not initialized\"}");
+      return;
+    }
+    
+    // Clear existing point cloud
+    renderer->clearPointCloud();
+    
+    // Set up binary reception
+    binaryState = BINARY_RECEIVING_DATA;
+    binaryExpectedPoints = numPoints;
+    binaryReceivedPoints = 0;
+    binaryBufferIndex = 0;
+    
+    // Send ready response
+    Serial.print("++\n{\"task\":\"/pointcloud_start\",\"status\":\"ready\",\"numPoints\":");
+    Serial.print(numPoints);
+    if (qid != 0) {
+      Serial.print(",\"qid\":");
+      Serial.print(qid);
+    }
+    Serial.println("}\n--");
+    Serial.flush();  // Ensure response is sent before binary data arrives
+    return;
+  }
+
   // Unknown task
   Serial.println("{\"status\":\"error\",\"info\":\"Unknown task\"}");
+}
+
+// -------------------------------------------------------------------
+// HELPER: Process binary point cloud data
+// -------------------------------------------------------------------
+void processBinaryData(uint8_t byte) {
+  if (binaryState != BINARY_RECEIVING_DATA) {
+    return;
+  }
+  
+  // Accumulate bytes for one point (4 bytes: X_low, X_high, Y_low, Y_high)
+  binaryBuffer[binaryBufferIndex++] = byte;
+  
+  if (binaryBufferIndex >= 4) {
+    // We have a complete point
+    uint16_t x = (binaryBuffer[1] << 8) | binaryBuffer[0];  // Little-endian
+    uint16_t y = (binaryBuffer[3] << 8) | binaryBuffer[2];  // Little-endian
+    
+    // Add point to renderer
+    if (renderer != nullptr) {
+      renderer->addPoint(x, y);
+    }
+    
+    binaryReceivedPoints++;
+    binaryBufferIndex = 0;
+    
+    // Check if we've received all points
+    if (binaryReceivedPoints >= binaryExpectedPoints) {
+      // Binary transfer complete
+      Serial.print("++\n{\"task\":\"/pointcloud_start\",\"status\":\"complete\",\"receivedPoints\":");
+      Serial.print(binaryReceivedPoints);
+      Serial.println("}\n--");
+      
+      // Reset binary state
+      binaryState = BINARY_IDLE;
+      binaryExpectedPoints = 0;
+      binaryReceivedPoints = 0;
+      binaryBufferIndex = 0;
+    }
+  }
 }
 
 // -------------------------------------------------------------------
@@ -317,15 +448,23 @@ void handleJSON(const String &jsonString) {
 // -------------------------------------------------------------------
 void processSerial() {
   while (Serial.available()) {
-    char c = (char)Serial.read();
-    if (c == '\n') {
-      // Process one line of JSON
-      if (incomingData.length() > 0) {
-        handleJSON(incomingData);
-        incomingData = "";
+    uint8_t byte = Serial.read();
+    
+    // Check if we're in binary mode
+    if (binaryState == BINARY_RECEIVING_DATA) {
+      processBinaryData(byte);
+    } else {
+      // Normal JSON mode
+      char c = (char)byte;
+      if (c == '\n') {
+        // Process one line of JSON
+        if (incomingData.length() > 0) {
+          handleJSON(incomingData);
+          incomingData = "";
+        }
+      } else if (c != '\r') {
+        incomingData += c;
       }
-    } else if (c != '\r') {
-      incomingData += c;
     }
   }
 }

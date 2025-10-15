@@ -482,3 +482,104 @@ void SPIRenderer::draw()
 }
   */
 
+////////////////////////////////////////////////////////////////
+// Point cloud methods
+////////////////////////////////////////////////////////////////
+
+void SPIRenderer::clearPointCloud()
+{
+  pointCloudX.clear();
+  pointCloudY.clear();
+  pointCloudIndex = 0;
+  ESP_LOGI(TAG, "Point cloud cleared");
+}
+
+void SPIRenderer::addPoint(uint16_t x, uint16_t y)
+{
+  // Clamp to valid DAC range
+  if (x > 4095) x = 4095;
+  if (y > 4095) y = 4095;
+  
+  pointCloudX.push_back(x);
+  pointCloudY.push_back(y);
+  ESP_LOGD(TAG, "Added point: (%d, %d), total points: %d", x, y, pointCloudX.size());
+}
+
+void SPIRenderer::setPointCloud(const std::vector<uint16_t>& xCoords, const std::vector<uint16_t>& yCoords)
+{
+  if (xCoords.size() != yCoords.size()) {
+    ESP_LOGE(TAG, "Point cloud X and Y coordinate arrays must be same size");
+    return;
+  }
+  
+  pointCloudX = xCoords;
+  pointCloudY = yCoords;
+  pointCloudIndex = 0;
+  
+  ESP_LOGI(TAG, "Point cloud set with %d points", pointCloudX.size());
+}
+
+void SPIRenderer::renderPointCloud()
+{
+  if (pointCloudX.empty()) {
+    ESP_LOGW(TAG, "Point cloud is empty, nothing to render");
+    return;
+  }
+  
+  ESP_LOGI(TAG, "Rendering point cloud with %d points", pointCloudX.size());
+  
+  // Frame trigger
+  if (ENABLE_TRIG_FRAME) {
+    gpio_set_level((gpio_num_t)PIN_NUM_TRIG_FRAME, 1);
+  }
+  
+  // Iterate through all points in the cloud
+  for (size_t i = 0; i < pointCloudX.size(); i++) {
+    uint16_t dacX = pointCloudX[i];
+    uint16_t dacY = pointCloudY[i];
+    
+    // Apply offsets and clamp
+    int dacXWithOffset = dacX + X_OFFSET;
+    int dacYWithOffset = dacY + Y_OFFSET;
+    dacXWithOffset = (dacXWithOffset < 0) ? 0 : ((dacXWithOffset > 4095) ? 4095 : dacXWithOffset);
+    dacYWithOffset = (dacYWithOffset < 0) ? 0 : ((dacYWithOffset > 4095) ? 4095 : dacYWithOffset);
+    
+    // Prepare SPI transactions for X and Y
+    spi_transaction_t t1 = {};
+    t1.length = 16;
+    t1.flags = SPI_TRANS_USE_TXDATA;
+    t1.tx_data[0] = (0b00110000 | ((dacXWithOffset >> 8) & 0x0F));
+    t1.tx_data[1] = (dacXWithOffset & 0xFF);
+    
+    spi_transaction_t t2 = {};
+    t2.length = 16;
+    t2.flags = SPI_TRANS_USE_TXDATA;
+    t2.tx_data[0] = (0b10110000 | ((dacYWithOffset >> 8) & 0x0F));
+    t2.tx_data[1] = (dacYWithOffset & 0xFF);
+    
+    // Send SPI data and latch
+    gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 0);
+    spi_device_polling_transmit(spi, &t1);
+    spi_device_polling_transmit(spi, &t2);
+    gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 1);
+    
+    // Pixel trigger
+    if (ENABLE_TRIG_PIXEL) {
+      gpio_set_level((gpio_num_t)PIN_NUM_TRIG_PIXEL, 1);
+      if (tPixelDwelltime > 0) {
+        esp_rom_delay_us(tPixelDwelltime);
+      }
+      gpio_set_level((gpio_num_t)PIN_NUM_TRIG_PIXEL, 0);
+    } else if (tPixelDwelltime > 0) {
+      esp_rom_delay_us(tPixelDwelltime);
+    }
+  }
+  
+  // Clear frame trigger
+  if (ENABLE_TRIG_FRAME) {
+    gpio_set_level((gpio_num_t)PIN_NUM_TRIG_FRAME, 0);
+  }
+  
+  ESP_LOGI(TAG, "Point cloud rendering complete");
+}
+
