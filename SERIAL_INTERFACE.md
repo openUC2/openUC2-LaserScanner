@@ -40,9 +40,12 @@ Retrieves device identification and status information.
 
 Updates the galvo scanner parameters for X/Y scanning and saves them to persistent storage.
 
+**BEWARE: Y is pixelclock**
 **Request:**
 ```json
-{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":30000,"Y_MIN":0,"Y_MAX":30000,"STEP":1000,"tPixelDwelltime":1,"nFrames":1,"SNAKE":true}
+{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":1024,"Y_MIN":0,"Y_MAX":1024,"STEP_X":4,"STEP_Y":5,"tPixelDwelltime":10,"nFrames":1,"SNAKE":false}
+
+{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":4,"Y_MIN":0,"Y_MAX":4,"STEP_X":1,"STEP_Y":1,"tPixelDwelltime":10,"nFrames":1,"SNAKE":false}
 ```
 
 **Parameters:**
