@@ -82,6 +82,10 @@ private:
   bool ENABLE_TRIG_LINE = true;
   bool ENABLE_TRIG_PIXEL = true;
   
+  // Point cloud mode
+  std::vector<uint16_t> pointCloudX;
+  std::vector<uint16_t> pointCloudY;
+  int pointCloudIndex = 0;
 
 public:
   SPIRenderer(int xmin, int xmax, int ymin, int ymax, int xoffset, int yoffset, 
@@ -92,5 +96,11 @@ public:
                      int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake = false, bool sim = false,
                      bool enableTrigFrame = true, bool enableTrigLine = true, bool enableTrigPixel = true);
   void setSinglePosition(int xpos, int ypos);  // Set galvos to a stationary position
+  
+  // Point cloud methods
+  void clearPointCloud();
+  void addPoint(uint16_t x, uint16_t y);
+  void setPointCloud(const std::vector<uint16_t>& xCoords, const std::vector<uint16_t>& yCoords);
+  void renderPointCloud();  // Render all points in the cloud
 
 };
