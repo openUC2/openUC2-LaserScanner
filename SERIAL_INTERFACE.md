@@ -45,7 +45,15 @@ Updates the galvo scanner parameters for X/Y scanning and saves them to persiste
 ```json
 {"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":1024,"Y_MIN":0,"Y_MAX":1024,"STEP_X":4,"STEP_Y":5,"tPixelDwelltime":10,"nFrames":1,"SNAKE":false}
 
-{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":4,"Y_MIN":0,"Y_MAX":4,"STEP_X":1,"STEP_Y":1,"tPixelDwelltime":10,"nFrames":1,"SNAKE":false}
+{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":512,"Y_MIN":0,"Y_MAX":512,"STEP_X":2,"STEP_Y":2,"tPixelDwelltime":10,"nFrames":1,"SNAKE":false}
+
+{"task":"/galvo_act","X_MIN":0,"X_MAX":2048,"Y_MIN":0,"Y_MAX":2048,"X_OFFSET":0,"Y_OFFSET":0,"STEP_X":10,"STEP_Y":10,"tPixelDwelltime":0,"nFrames":10,"SNAKE":false,"SIM":false,"SINGLE":false,"X_POS":2048,"Y_POS":2048,"ENABLE_TRIG_FRAME":true,"ENABLE_TRIG_LINE":true,"ENABLE_TRIG_PIXEL":true,"success":1,"qid":1}
+
+{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":1024,"Y_MIN":0,"Y_MAX":1024,"STEP_X":4,"STEP_Y":4,"tPixelDwelltime":0,"nFrames":10,"SNAKE":false, "SIM":false, "SINGLE":false}
+
+
+{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":1024,"Y_MIN":0,"Y_MAX":1536,"X_OFFSET":1024,"Y_OFFSET":1024,"STEP_X":8,"STEP_Y":8,"tPixelDwelltime":0,"nFrames":1,"SNAKE":false, "SIM":false, "SINGLE":false}
+
 ```
 
 **Parameters:**

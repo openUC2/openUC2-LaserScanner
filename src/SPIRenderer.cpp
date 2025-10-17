@@ -241,7 +241,260 @@ void SPIRenderer::setParameters(int xmin, int xmax, int ymin, int ymax, int xoff
          enableTrigFrame, enableTrigLine, enableTrigPixel);
 }
 
+////////////////////////////////////////////////////////////////
+// Fast GPIO helpers
+////////////////////////////////////////////////////////////////
+static inline void fast_set(int pin) { GPIO.out_w1ts = (1U << pin); }
+static inline void fast_clear(int pin) { GPIO.out_w1tc = (1U << pin); }
+
+static inline void trigger_pulse(int pin, int pulse_us)
+{
+  fast_set(pin);
+  esp_rom_delay_us(pulse_us);
+  fast_clear(pin);
+}
+
+/*
 void SPIRenderer::drawFrame()
+{
+  ESP_LOGI(TAG, "Drawing frame %d / %d", currentFrame + 1, nFrames);
+
+  // ---- FRAME CLOCK ----
+  if (ENABLE_TRIG_FRAME)
+    trigger_pulse(PIN_NUM_TRIG_FRAME, 0); // short pulse
+
+  // Optional SIM Y offset
+  int simYOffset = (SIM && nFrames > 0) ? (STEP_Y * currentFrame) / nFrames : 0;
+  int lineNumber = 0;
+
+  for (int dacX = X_MIN; dacX <= X_MAX; dacX += STEP_X)
+  {
+    // ---- LINE CLOCK ----
+    if (ENABLE_TRIG_LINE)
+      trigger_pulse(PIN_NUM_TRIG_LINE, 0); // one pulse per line
+
+    // Determine Y scan direction for snake pattern
+    int yStart, yEnd, yStep;
+    if ((SNAKE || SIM) && (lineNumber % 2 == 1))
+    {
+      yStart = Y_MAX;
+      yEnd = Y_MIN;
+      yStep = -STEP_Y;
+    }
+    else
+    {
+      yStart = Y_MIN;
+      yEnd = Y_MAX;
+      yStep = STEP_Y;
+    }
+
+    for (int dacY = yStart; (yStep > 0) ? (dacY <= yEnd) : (dacY >= yEnd); dacY += yStep)
+    {
+      // Apply offsets
+      int dacXw = dacX + X_OFFSET;
+      int dacYw = dacY + Y_OFFSET + simYOffset;
+      dacXw = (dacXw < 0) ? 0 : ((dacXw > 4095) ? 4095 : dacXw);
+      dacYw = (dacYw < 0) ? 0 : ((dacYw > 4095) ? 4095 : dacYw);
+
+      // SPI transaction setup
+      spi_transaction_t t1 = {};
+      t1.length = 16;
+      t1.flags = SPI_TRANS_USE_TXDATA;
+      t1.tx_data[0] = (0b00110000 | ((dacXw >> 8) & 0x0F));
+      t1.tx_data[1] = (dacXw & 0xFF);
+
+      spi_transaction_t t2 = {};
+      t2.length = 16;
+      t2.flags = SPI_TRANS_USE_TXDATA;
+      t2.tx_data[0] = (0b10110000 | ((dacYw >> 8) & 0x0F));
+      t2.tx_data[1] = (dacYw & 0xFF);
+
+      // Update DAC
+      fast_clear(PIN_NUM_LDAC);
+      spi_device_polling_transmit(spi, &t1);
+      spi_device_polling_transmit(spi, &t2);
+      fast_set(PIN_NUM_LDAC);
+
+      // ---- PIXEL CLOCK ----
+      if (ENABLE_TRIG_PIXEL)
+        trigger_pulse(PIN_NUM_TRIG_PIXEL, tPixelDwelltime);
+    }
+
+    lineNumber++;
+  }
+
+  currentFrame++;
+  if (currentFrame >= nFrames)
+    currentFrame = 0;
+}
+    */
+
+int clamp(int &value, int minVal, int maxVal)
+{
+  if (value < minVal)
+    value = minVal;
+  if (value > maxVal)
+    value = maxVal;
+  return value;
+}
+
+void SPIRenderer::drawFrame()
+{
+  ESP_LOGI(TAG, "Drawing frame %d / %d", currentFrame + 1, nFrames);
+
+  // Compute SIM offset
+  int simYOffset = (SIM && nFrames > 0) ? (STEP_Y * currentFrame) / nFrames : 0;
+
+  // Bitmasks for atomic trigger control
+  const uint32_t PIXEL_BIT = (1U << PIN_NUM_TRIG_PIXEL);
+  const uint32_t LINE_BIT = (1U << PIN_NUM_TRIG_LINE);
+  const uint32_t FRAME_BIT = (1U << PIN_NUM_TRIG_FRAME);
+
+  // ----------------------------------------------------------------------
+  // FRAME PULSE (once at start of frame)
+  // ----------------------------------------------------------------------
+  if (ENABLE_TRIG_FRAME)
+  {
+    GPIO.out_w1ts = FRAME_BIT; // all bits HIGH simultaneously
+    esp_rom_delay_us(5);       // short 5 µs pulse
+    GPIO.out_w1tc = FRAME_BIT; // all bits LOW simultaneously
+  }
+
+  int lineNumber = 0;
+
+  // ----------------------------------------------------------------------
+  // X-loop: iterate over lines
+  // ----------------------------------------------------------------------
+  for (int dacX = X_MIN; dacX <= X_MAX; dacX += STEP_X)
+  {
+    // LINE pulse at start of each row
+    if (ENABLE_TRIG_LINE)
+    {
+      GPIO.out_w1ts = LINE_BIT;
+      esp_rom_delay_us(5);
+      GPIO.out_w1tc = LINE_BIT;
+    }
+
+    // Determine Y scanning direction
+    int yStart, yEnd, yStep;
+    if ((SNAKE || SIM) && (lineNumber % 2 == 1))
+    {
+      yStart = Y_MAX;
+      yEnd = Y_MIN;
+      yStep = -STEP_Y;
+    }
+    else
+    {
+      yStart = Y_MIN;
+      yEnd = Y_MAX;
+      yStep = STEP_Y;
+    }
+
+    // ------------------------------------------------------------------
+    // Y-loop: pixels in this line
+    // ------------------------------------------------------------------
+    for (int dacY = yStart; (yStep > 0) ? (dacY <= yEnd) : (dacY >= yEnd); dacY += yStep)
+    {
+      // Compute DAC positions
+      int dacXw = dacX + X_OFFSET; // clamp(dacX + X_OFFSET, 0, 4095);
+      int dacYw = dacY + Y_OFFSET; // clamp(dacY + Y_OFFSET + simYOffset, 0, 4095);
+
+      spi_transaction_t t1 = {};
+      t1.length = 16;
+      t1.flags = SPI_TRANS_USE_TXDATA;
+      t1.tx_data[0] = (0b00110000 | ((dacXw >> 8) & 0x0F));
+      t1.tx_data[1] = (dacXw & 0xFF);
+
+      spi_transaction_t t2 = {};
+      t2.length = 16;
+      t2.flags = SPI_TRANS_USE_TXDATA;
+      t2.tx_data[0] = (0b10110000 | ((dacYw >> 8) & 0x0F));
+      t2.tx_data[1] = (dacYw & 0xFF);
+
+      // Update DACs (atomic latch)
+      GPIO.out_w1tc = (1U << PIN_NUM_LDAC);
+      spi_device_polling_transmit(spi, &t1);
+      spi_device_polling_transmit(spi, &t2);
+      GPIO.out_w1ts = (1U << PIN_NUM_LDAC);
+
+      // --------------------------------------------------------------
+      // PIXEL PULSE — synchronous, stable, and jitter-free
+      // --------------------------------------------------------------
+      if (ENABLE_TRIG_PIXEL)
+      {
+        // combine bits that should toggle together
+        uint32_t mask_on = PIXEL_BIT; // only pixel goes high per dwell
+        uint32_t mask_off = PIXEL_BIT;
+
+        // atomic HIGH + dwell + atomic LOW
+        GPIO.out_w1ts = mask_on;
+        esp_rom_delay_us(tPixelDwelltime);
+        GPIO.out_w1tc = mask_off;
+      }
+    }
+    if(0){
+    // invert Y direction for snake pattern
+    yStart = yEnd;
+    if ((SNAKE || SIM) && (lineNumber % 2 == 1))
+    {
+      yStart = Y_MIN;
+      yEnd = Y_MAX;
+      yStep = STEP_Y;
+    }
+    else
+    {
+      yStart = Y_MAX;
+      yEnd = Y_MIN;
+      yStep = -STEP_Y;
+    }
+
+    for (int dacY = yStart; (yStep > 0) ? (dacY <= yEnd) : (dacY >= yEnd); dacY += yStep)
+    {
+      // Compute DAC positions
+      int dacYw = dacY + Y_OFFSET; // clamp(dacY + Y_OFFSET + simYOffset, 0, 4095);
+
+      
+      spi_transaction_t t2 = {};
+      t2.length = 16;
+      t2.flags = SPI_TRANS_USE_TXDATA;
+      t2.tx_data[0] = (0b10110000 | ((dacYw >> 8) & 0x0F));
+      t2.tx_data[1] = (dacYw & 0xFF);
+
+      // Update DACs (atomic latch)
+      GPIO.out_w1tc = (1U << PIN_NUM_LDAC);
+      spi_device_polling_transmit(spi, &t2);
+      GPIO.out_w1ts = (1U << PIN_NUM_LDAC);
+
+      // add a little delay to allow settling
+      esp_rom_delay_us(tPixelDwelltime);
+
+      // --------------------------------------------------------------
+      // PIXEL PULSE — synchronous, stable, and jitter-free
+      // --------------------------------------------------------------
+      if (ENABLE_TRIG_PIXEL)
+      {
+        // combine bits that should toggle together
+        uint32_t mask_on = PIXEL_BIT; // only pixel goes high per dwell
+        uint32_t mask_off = PIXEL_BIT;
+
+        // atomic HIGH + dwell + atomic LOW
+        GPIO.out_w1ts = mask_on;
+        esp_rom_delay_us(tPixelDwelltime);
+        GPIO.out_w1tc = mask_off;
+      }
+
+    }
+}
+    lineNumber++;
+  }
+
+  // frame complete
+  currentFrame++;
+  if (currentFrame >= nFrames)
+    currentFrame = 0;
+}
+
+void SPIRenderer::drawFrame_()
 {
   printf("Drawing frame %d\n", currentFrame + 1);
 
@@ -373,33 +626,67 @@ void SPIRenderer::drawFrame()
     {
       GPIO.out_w1tc = (1U << PIN_NUM_TRIG_LINE);
     }
-      
+
 
     // Possibly delay
     ets_delay_us(5);
 */
     // move scanner back to origin Y position in a sawtooth to be at the correct pixel location in the next line prior to triggering
-    if (0)
+    // Loop over Y with direction determined above
+    for (int dacY = yEnd;
+         dacY >= yStart;
+         dacY -= yStep)
     {
-      for (int dacY = yEnd;
-           dacY >= yStart;
-           dacY -= (yStep * 10)) // move back faster
+      if (dacY == yEnd)
+        printf("Returning to Y=%d\n", dacY);
+      // Clear triggers if enabled
+      if (ENABLE_TRIG_PIXEL)
       {
-        // Apply offsets to DAC values
-        int dacYWithOffset = dacY + Y_OFFSET + simYOffset; // Add SIM offset
-        dacYWithOffset = (dacYWithOffset < 0) ? 0 : ((dacYWithOffset > 4095) ? 4095 : dacYWithOffset);
-        // print value:
-        printf("Returning to Y=%d (with offset %d)\n", dacY, dacYWithOffset);
-        spi_transaction_t t2 = {};
-        t2.length = 16;
-        t2.flags = SPI_TRANS_USE_TXDATA;
-        t2.tx_data[0] = (0b10110000 | ((dacYWithOffset >> 8) & 0x0F));
-        t2.tx_data[1] = (dacYWithOffset & 0xFF);
+        GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL);
+      }
+      if (ENABLE_TRIG_LINE)
+      {
+        GPIO.out_w1tc = (1U << PIN_NUM_TRIG_LINE);
+      }
+      if (ENABLE_TRIG_FRAME)
+      {
+        GPIO.out_w1tc = (1U << PIN_NUM_TRIG_FRAME);
+      }
 
-        // Fewer LDAC toggles: latch once per pixel
-        GPIO.out_w1tc = (1U << PIN_NUM_LDAC);  // hold LDAC low
-        spi_device_polling_transmit(spi, &t2); // send Y
-        GPIO.out_w1ts = (1U << PIN_NUM_LDAC);  // latch both channels
+      // Apply offsets to DAC values
+      int dacXWithOffset = dacX + X_OFFSET;
+      int dacYWithOffset = dacY + Y_OFFSET + simYOffset; // Add SIM offset
+
+      // Clamp to valid DAC range (0-4095 for 12-bit DAC)
+      dacXWithOffset = (dacXWithOffset < 0) ? 0 : ((dacXWithOffset > 4095) ? 4095 : dacXWithOffset);
+      dacYWithOffset = (dacYWithOffset < 0) ? 0 : ((dacYWithOffset > 4095) ? 4095 : dacYWithOffset);
+      // move to first pixel prior to triggering and pause for a bit, but not in snake/sim mode
+
+      spi_transaction_t t2 = {};
+      t2.length = 16;
+      t2.flags = SPI_TRANS_USE_TXDATA;
+      t2.tx_data[0] = (0b10110000 | ((dacYWithOffset >> 8) & 0x0F));
+      t2.tx_data[1] = (dacYWithOffset & 0xFF);
+
+      // Fewer LDAC toggles: latch once per pixel
+      GPIO.out_w1tc = (1U << PIN_NUM_LDAC); // hold LDAC low
+
+      spi_device_polling_transmit(spi, &t2); // send Y
+      GPIO.out_w1ts = (1U << PIN_NUM_LDAC);  // latch both channels
+
+      // Optionally set a trigger directly for the pixel
+      if (ENABLE_TRIG_PIXEL)
+      {
+        GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL);
+      }
+      // Delay if needed:
+      ets_delay_us(tPixelDwelltime);
+
+      // Clear pixel trigger again
+
+      if (ENABLE_TRIG_PIXEL)
+      {
+        GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL);
       }
     }
 
@@ -470,66 +757,3 @@ void SPIRenderer::setSinglePosition(int xpos, int ypos)
 
   printf("Set single position: X=%d, Y=%d\n", xpos, ypos);
 }
-
-/*
-void SPIRenderer::draw()
-{
-  // Outer loop: frames
-  for (int iFrame = 0; iFrame < nFrames; iFrame++)
-  {
-    printf("Drawing frame %d of %d\n", iFrame + 1, nFrames);
-    printf("X_MIN %d, X_MAX %d, Y_MIN %d, Y_MAX %d, STEP %d\n",
-           X_MIN, X_MAX, Y_MIN, Y_MAX, STEP);
-
-    // Example: set all triggers high at the start of a frame
-    // pixelTrigVal, lineTrigVal, frameTrigVal
-    set_gpio_pins(1, 1, 1);
-
-    // Loop over X
-    for (int dacX = X_MIN; dacX <= X_MAX; dacX += STEP)
-    {
-
-      // Loop over Y
-      for (int dacY = Y_MIN; dacY <= Y_MAX; dacY += STEP)
-      {
-        set_gpio_pins(0, 0, 0);
-
-        //ESP_LOGI(TAG, "Drawing pixel at %d %d", dacX, dacY);
-
-        // SPI transaction for channel A (X-axis)
-        spi_transaction_t t1 = {};
-        t1.length = 16; // 16 bits
-        t1.flags = SPI_TRANS_USE_TXDATA;
-        t1.tx_data[0] = (0b00110000 | ((dacX >> 8) & 0x0F)); // Bit 5 = 1 (Gain = 1)
-        t1.tx_data[1] = (dacX & 0xFF);
-
-        // SPI transaction for channel B (Y-axis)
-        spi_transaction_t t2 = {};
-        t2.length = 16;
-        t2.flags = SPI_TRANS_USE_TXDATA;
-        t2.tx_data[0] = (0b10110000 | ((dacY >> 8) & 0x0F)); // Bit 5 = 1 (Gain = 1)
-        t2.tx_data[1] = (dacY & 0xFF);
-
-        // Latch the DAC
-        gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 0);
-        gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 1);
-
-        gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 0); // Hold LDAC low
-        spi_device_polling_transmit(spi, &t1);       // Send X value
-        spi_device_polling_transmit(spi, &t2);       // Send Y value
-        gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 1); // Latch both channels
-
-        // Trigger the camera for each pixel
-        // trigger_camera(this->tPixelDwelltime, PIN_NUM_TRIG_PIXEL);
-
-        // Possibly clear certain triggers
-        set_gpio_pins(1, 0, 0);
-      }
-      // Possibly clear certain triggers
-      set_gpio_pins(1, 1, 0);
-    }
-    // End of frame
-    set_gpio_pins(0, 0, 0);
-  }
-}
-  */

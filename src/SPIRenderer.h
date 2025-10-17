@@ -62,6 +62,7 @@ class SPIRenderer
 private:
   spi_device_handle_t spi;
   void  drawFrame();
+  void  drawFrame_();
   int nX;
   int nY;
   int tPixelDwelltime;

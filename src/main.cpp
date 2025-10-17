@@ -88,8 +88,8 @@ void loadParameters() {
   Y_MAX = preferences.getInt("Y_MAX", 2048);
   X_OFFSET = preferences.getInt("X_OFFSET", 0);
   Y_OFFSET = preferences.getInt("Y_OFFSET", 0);
-  STEP_X = preferences.getInt("STEP_X", 10);
-  STEP_Y = preferences.getInt("STEP_Y", 10);
+  STEP_X = preferences.getInt("STEP_X", 8);
+  STEP_Y = preferences.getInt("STEP_Y", 8);
   tPixelDwelltime = preferences.getInt("tPixelDwell", 0);
   nFrames = preferences.getInt("nFrames", 10);
   SNAKE = preferences.getBool("SNAKE", false);
@@ -149,7 +149,7 @@ void handleJSON(const String &jsonString) {
 
   // Handle /galvo_act command
   if (strcmp(task, "/galvo_act") == 0) {
-    /*
+    /*_
     {"task":"/galvo_act", "qid":1, "X_MIN":0, "X_MAX":2048, "Y_MIN":0, "Y_MAX":2048, "STEP_X":10, "STEP_Y":100, "tPixelDwelltime":0, "nFrames":1, "SNAKE":true}
     {"task":"/galvo_act", "qid":1, "X_POS":1000, "Y_POS":2048, "SINGLE":true}
     */
@@ -260,6 +260,7 @@ void handleJSON(const String &jsonString) {
   }
 
   // Handle /galvo_get command
+  // {"task":"/galvo_get", "qid":1}
   if (strcmp(task, "/galvo_get") == 0) {
     int qid = doc["qid"] | 0;
     Serial.print("++\n{\"task\":\"/galvo_get\",");
