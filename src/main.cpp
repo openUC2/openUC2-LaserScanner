@@ -485,10 +485,18 @@ void app_main()
   // Disable the task watchdog for the main task
   esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(0));
 
-  // Create renderer with loaded parameters
-  renderer = new SPIRenderer(X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y,
-                             tPixelDwelltime, nFrames, SNAKE, SIM,
-                             ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL);
+  int X_MIN = 0;
+  int X_MAX = 1024; //1000;
+  int Y_MIN = 0;
+  int Y_MAX = 1024; //1000;
+  int STEP = 10; // Adjust based on your desired resolution
+  int tPixelDwelltime = 0;
+  int nFrames = 100;
+  SPIRenderer *renderer = new SPIRenderer(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames);
+  while (1){
+    tPixelDwelltime +=1;
+    renderer->setParameters(X_MIN, X_MAX, Y_MIN, Y_MAX, STEP, tPixelDwelltime, nFrames);
+    renderer->start();
 
   while (1) {
     // Process any incoming serial commands

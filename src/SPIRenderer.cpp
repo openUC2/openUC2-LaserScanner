@@ -624,70 +624,65 @@ void SPIRenderer::drawFrame_()
     // Clear line trigger
     if (ENABLE_TRIG_LINE)
     {
-      GPIO.out_w1tc = (1U << PIN_NUM_TRIG_LINE);
-    }
+        printf("Drawing frame %d of %d\n", iFrame + 1, nFrames);
 
+        // Directly set all triggers high to mark frame start
+        GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL) |
+                        (1U << PIN_NUM_TRIG_LINE) |
+                        (1U << PIN_NUM_TRIG_FRAME);
 
-    // Possibly delay
-    ets_delay_us(5);
-*/
-    // move scanner back to origin Y position in a sawtooth to be at the correct pixel location in the next line prior to triggering
-    // Loop over Y with direction determined above
-    for (int dacY = yEnd;
-         dacY >= yStart;
-         dacY -= yStep)
-    {
-      if (dacY == yEnd)
-        printf("Returning to Y=%d\n", dacY);
-      // Clear triggers if enabled
-      if (ENABLE_TRIG_PIXEL)
-      {
-        GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL);
-      }
-      if (ENABLE_TRIG_LINE)
-      {
-        GPIO.out_w1tc = (1U << PIN_NUM_TRIG_LINE);
-      }
-      if (ENABLE_TRIG_FRAME)
-      {
-        GPIO.out_w1tc = (1U << PIN_NUM_TRIG_FRAME);
-      }
+        // add a small delay to ensure the frame start is registered
+        esp_rom_delay_us(1);
+        // Loop over X 
+        for(int dacX = X_MIN; dacX <= X_MAX; dacX += STEP)
+        {
+            // Loop over Y pixels
+            for(int dacY = Y_MIN; dacY <= Y_MAX; dacY += STEP)
+            {
+                // Clear triggers in one go
+                GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL) |
+                                (1U << PIN_NUM_TRIG_LINE) |
+                                (1U << PIN_NUM_TRIG_FRAME);
+                esp_rom_delay_us(1);
+                // Prepare SPI transactions for X and Y
+                spi_transaction_t t1 = {};
+                t1.length = 16;
+                t1.flags = SPI_TRANS_USE_TXDATA;
+                t1.tx_data[0] = (0b00110000 | ((dacX >> 8) & 0x0F));
+                t1.tx_data[1] = (dacX & 0xFF);
 
-      // Apply offsets to DAC values
-      int dacXWithOffset = dacX + X_OFFSET;
-      int dacYWithOffset = dacY + Y_OFFSET + simYOffset; // Add SIM offset
+                spi_transaction_t t2 = {};
+                t2.length = 16;
+                t2.flags = SPI_TRANS_USE_TXDATA;
+                t2.tx_data[0] = (0b10110000 | ((dacY >> 8) & 0x0F));
+                t2.tx_data[1] = (dacY & 0xFF);
 
-      // Clamp to valid DAC range (0-4095 for 12-bit DAC)
-      dacXWithOffset = (dacXWithOffset < 0) ? 0 : ((dacXWithOffset > 4095) ? 4095 : dacXWithOffset);
-      dacYWithOffset = (dacYWithOffset < 0) ? 0 : ((dacYWithOffset > 4095) ? 4095 : dacYWithOffset);
-      // move to first pixel prior to triggering and pause for a bit, but not in snake/sim mode
+                // Fewer LDAC toggles: latch once per pixel
+                GPIO.out_w1tc = (1U << PIN_NUM_LDAC);  // hold LDAC low
+                spi_device_polling_transmit(spi, &t1); // send X
+                spi_device_polling_transmit(spi, &t2); // send Y
+                GPIO.out_w1ts = (1U << PIN_NUM_LDAC);  // latch both channels
 
-      spi_transaction_t t2 = {};
-      t2.length = 16;
-      t2.flags = SPI_TRANS_USE_TXDATA;
-      t2.tx_data[0] = (0b10110000 | ((dacYWithOffset >> 8) & 0x0F));
-      t2.tx_data[1] = (dacYWithOffset & 0xFF);
+                // Optionally set a trigger directly for the pixel
+                GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL);
+                // Delay if needed: 
+                esp_rom_delay_us(tPixelDwelltime);
 
-      // Fewer LDAC toggles: latch once per pixel
-      GPIO.out_w1tc = (1U << PIN_NUM_LDAC); // hold LDAC low
-
-      spi_device_polling_transmit(spi, &t2); // send Y
-      GPIO.out_w1ts = (1U << PIN_NUM_LDAC);  // latch both channels
-
-      // Optionally set a trigger directly for the pixel
-      if (ENABLE_TRIG_PIXEL)
-      {
-        GPIO.out_w1ts = (1U << PIN_NUM_TRIG_PIXEL);
-      }
-      // Delay if needed:
-      ets_delay_us(tPixelDwelltime);
-
-      // Clear pixel trigger again
-
-      if (ENABLE_TRIG_PIXEL)
-      {
-        GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL);
-      }
+                // Clear pixel trigger again
+                GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL);
+            }
+            // Optionally set line trigger here
+            GPIO.out_w1ts = (1U << PIN_NUM_TRIG_LINE);
+            // Possibly delay
+            // Clear line trigger
+            GPIO.out_w1tc = (1U << PIN_NUM_TRIG_LINE);
+            // delay to see if jitter goes away 
+            //esp_rom_delay_us(50);
+        }
+        // End of frame: clear triggers
+        GPIO.out_w1tc = (1U << PIN_NUM_TRIG_PIXEL) |
+                        (1U << PIN_NUM_TRIG_LINE) |
+                        (1U << PIN_NUM_TRIG_FRAME);
     }
 
     // Increment line number for snake pattern tracking
