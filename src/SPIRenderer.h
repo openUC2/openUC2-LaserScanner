@@ -61,7 +61,8 @@ class SPIRenderer
 {
 private:
   spi_device_handle_t spi;
-  void  draw();
+  void  drawFrame();
+  void  drawFrame_();
   int nX;
   int nY;
   int tPixelDwelltime;
@@ -69,13 +70,37 @@ private:
   int X_MAX = 2048;
   int Y_MIN = 0;
   int Y_MAX = 2048;
-  int STEP = 64; // Adjust based on your desired resolution
+  int X_OFFSET = 0;
+  int Y_OFFSET = 0;
+  int STEP_X = 64;
+  int STEP_Y = 64;
   int nFrames = 1;
+  int currentFrame = 0;  // Track current frame for continuous operation
+  bool SNAKE = false; // Snake scanning pattern
+  bool SIM = false;   // Structured illumination mode
+  bool ENABLE_TRIG_FRAME = true;
+  bool ENABLE_TRIG_LINE = true;
+  bool ENABLE_TRIG_PIXEL = true;
   
+  // Point cloud mode
+  std::vector<uint16_t> pointCloudX;
+  std::vector<uint16_t> pointCloudY;
+  int pointCloudIndex = 0;
 
 public:
-  SPIRenderer(int xmin, int xmax, int ymin, int ymax, int step, int tPixelDwelltime, int nFramesI);
-  void start();
-  void setParameters(int xmin, int xmax, int ymin, int ymax, int step, int tPixelDwelltime, int nFramesI);
+  SPIRenderer(int xmin, int xmax, int ymin, int ymax, int xoffset, int yoffset, 
+              int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake = false, bool sim = false,
+              bool enableTrigFrame = true, bool enableTrigLine = true, bool enableTrigPixel = true);
+  void start();  // Renders one frame and returns
+  void setParameters(int xmin, int xmax, int ymin, int ymax, int xoffset, int yoffset,
+                     int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake = false, bool sim = false,
+                     bool enableTrigFrame = true, bool enableTrigLine = true, bool enableTrigPixel = true);
+  void setSinglePosition(int xpos, int ypos);  // Set galvos to a stationary position
+  
+  // Point cloud methods
+  void clearPointCloud();
+  void addPoint(uint16_t x, uint16_t y);
+  void setPointCloud(const std::vector<uint16_t>& xCoords, const std::vector<uint16_t>& yCoords);
+  void renderPointCloud();  // Render all points in the cloud
 
 };
