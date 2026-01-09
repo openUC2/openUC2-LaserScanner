@@ -82,6 +82,14 @@ private:
   bool ENABLE_TRIG_LINE = true;
   bool ENABLE_TRIG_PIXEL = true;
   
+  // Light-sheet mode parameters
+  int LS_AMPLITUDE = 2048;   // Amplitude of sinusoidal pattern
+  float LS_FREQUENCY = 1.0;  // Frequency in Hz (max 100 Hz)
+  int LS_OFFSET = 2048;      // Y-axis offset (center position)
+  int LS_DELAY = 1000;       // Delay between points in microseconds
+  std::vector<int> lightSheetSineTable;  // Pre-computed sine table
+  int lightSheetIndex = 0;   // Current index in sine table
+  
   // Point cloud mode
   std::vector<uint16_t> pointCloudX;
   std::vector<uint16_t> pointCloudY;
@@ -96,6 +104,11 @@ public:
                      int stepx, int stepy, int tPixelDwelltime, int nFramesI, bool snake = false, bool sim = false,
                      bool enableTrigFrame = true, bool enableTrigLine = true, bool enableTrigPixel = true);
   void setSinglePosition(int xpos, int ypos);  // Set galvos to a stationary position
+  
+  // Light-sheet mode methods
+  void setLightSheetParameters(int amplitude, float frequency, int offset, int delay);
+  void computeLightSheetSineTable();  // Pre-compute sine table based on Y_MIN, Y_MAX, STEP_Y
+  void renderLightSheet();  // Render sinusoidal Y-axis scanning
   
   // Point cloud methods
   void clearPointCloud();

@@ -58,6 +58,13 @@ bool SINGLE = false;  // Single point mode (stationary position)
 int X_POS = 2048;     // X position for single point mode (0-4095)
 int Y_POS = 2048;     // Y position for single point mode (0-4095)
 
+// Light-sheet mode parameters
+bool LIGHTSHEET = false;   // Light-sheet mode (sinusoidal Y-axis scanning)
+int LS_AMPLITUDE = 2048;   // Amplitude of sinusoidal pattern (0-4095)
+float LS_FREQUENCY = 1.0;  // Frequency in Hz
+int LS_OFFSET = 2048;      // Y-axis offset (center position, 0-4095)
+int LS_DELAY = 1000;       // Delay between points in microseconds
+
 extern "C"
 {
   void app_main(void);
@@ -86,6 +93,11 @@ void saveParameters() {
   preferences.putBool("SINGLE", SINGLE);
   preferences.putInt("X_POS", X_POS);
   preferences.putInt("Y_POS", Y_POS);
+  preferences.putBool("LIGHTSHEET", LIGHTSHEET);
+  preferences.putInt("LS_AMP", LS_AMPLITUDE);
+  preferences.putFloat("LS_FREQ", LS_FREQUENCY);
+  preferences.putInt("LS_OFFSET", LS_OFFSET);
+  preferences.putInt("LS_DELAY", LS_DELAY);
   preferences.end();
   ESP_LOGI(TAG, "Parameters saved to preferences");
 }
@@ -113,9 +125,14 @@ void loadParameters() {
   SINGLE = preferences.getBool("SINGLE", false);
   X_POS = preferences.getInt("X_POS", 2048);
   Y_POS = preferences.getInt("Y_POS", 2048);
+  LIGHTSHEET = preferences.getBool("LIGHTSHEET", false);
+  LS_AMPLITUDE = preferences.getInt("LS_AMP", 2048);
+  LS_FREQUENCY = preferences.getFloat("LS_FREQ", 1.0);
+  LS_OFFSET = preferences.getInt("LS_OFFSET", 2048);
+  LS_DELAY = preferences.getInt("LS_DELAY", 1000);
   preferences.end();
-  ESP_LOGI(TAG, "Parameters loaded from preferences: X_MIN=%d X_MAX=%d Y_MIN=%d Y_MAX=%d X_OFF=%d Y_OFF=%d STEP_X=%d STEP_Y=%d tPixelDwell=%d nFrames=%d SNAKE=%d SIM=%d TRIG_F=%d TRIG_L=%d TRIG_P=%d SINGLE=%d X_POS=%d Y_POS=%d",
-           X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y, tPixelDwelltime, nFrames, SNAKE, SIM, ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL, SINGLE, X_POS, Y_POS);
+  ESP_LOGI(TAG, "Parameters loaded from preferences: X_MIN=%d X_MAX=%d Y_MIN=%d Y_MAX=%d X_OFF=%d Y_OFF=%d STEP_X=%d STEP_Y=%d tPixelDwell=%d nFrames=%d SNAKE=%d SIM=%d TRIG_F=%d TRIG_L=%d TRIG_P=%d SINGLE=%d X_POS=%d Y_POS=%d LIGHTSHEET=%d LS_AMP=%d LS_FREQ=%.2f LS_OFF=%d LS_DELAY=%d",
+           X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y, tPixelDwelltime, nFrames, SNAKE, SIM, ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL, SINGLE, X_POS, Y_POS, LIGHTSHEET, LS_AMPLITUDE, LS_FREQUENCY, LS_OFFSET, LS_DELAY);
 }
 
 
@@ -169,6 +186,52 @@ void handleJSON(const String &jsonString) {
 
     int qid = doc["qid"] | 0;
 
+    // Check if LIGHTSHEET mode is being set
+    if (doc.containsKey("LIGHTSHEET")) {
+      bool newLightsheet = doc["LIGHTSHEET"];
+      LIGHTSHEET = newLightsheet;
+
+      if (LIGHTSHEET) {
+        // In light-sheet mode, get parameters
+        LS_AMPLITUDE = doc["LS_AMPLITUDE"] | LS_AMPLITUDE;
+        LS_FREQUENCY = doc["LS_FREQUENCY"] | LS_FREQUENCY;
+        LS_OFFSET = doc["LS_OFFSET"] | LS_OFFSET;
+        LS_DELAY = doc["LS_DELAY"] | LS_DELAY;
+
+        // Clamp to valid ranges
+        LS_AMPLITUDE = (LS_AMPLITUDE < 0) ? 0 : ((LS_AMPLITUDE > 4095) ? 4095 : LS_AMPLITUDE);
+        LS_OFFSET = (LS_OFFSET < 0) ? 0 : ((LS_OFFSET > 4095) ? 4095 : LS_OFFSET);
+        LS_DELAY = (LS_DELAY < 0) ? 0 : LS_DELAY;
+
+        // Disable SINGLE mode when entering LIGHTSHEET mode
+        SINGLE = false;
+
+        // Save parameters
+        saveParameters();
+
+        // Update renderer if it exists
+        if (renderer != nullptr) {
+          renderer->setLightSheetParameters(LS_AMPLITUDE, LS_FREQUENCY, LS_OFFSET, LS_DELAY);
+        }
+
+        // Report success
+        Serial.print("++\n{\"task\":\"/galvo_act\",\"status\":\"success\",\"mode\":\"lightsheet\",\"LS_AMPLITUDE\":");
+        Serial.print(LS_AMPLITUDE);
+        Serial.print(",\"LS_FREQUENCY\":");
+        Serial.print(LS_FREQUENCY);
+        Serial.print(",\"LS_OFFSET\":");
+        Serial.print(LS_OFFSET);
+        Serial.print(",\"LS_DELAY\":");
+        Serial.print(LS_DELAY);
+        if (qid != 0) {
+          Serial.print(",\"qid\":");
+          Serial.print(qid);
+        }
+        Serial.println("}\n--");
+        return;
+      }
+    }
+
     // Check if SINGLE mode is being set
     if (doc.containsKey("SINGLE")) {
       bool newSingle = doc["SINGLE"];
@@ -182,6 +245,9 @@ void handleJSON(const String &jsonString) {
         // Clamp to valid DAC range
         X_POS = (X_POS < 0) ? 0 : ((X_POS > 4095) ? 4095 : X_POS);
         Y_POS = (Y_POS < 0) ? 0 : ((Y_POS > 4095) ? 4095 : Y_POS);
+
+        // Disable LIGHTSHEET mode when entering SINGLE mode
+        LIGHTSHEET = false;
 
         // Save parameters
         saveParameters();
@@ -230,9 +296,10 @@ void handleJSON(const String &jsonString) {
     bool newTrigLine = doc["ENABLE_TRIG_LINE"] | ENABLE_TRIG_LINE;
     bool newTrigPixel = doc["ENABLE_TRIG_PIXEL"] | ENABLE_TRIG_PIXEL;
 
-    // If SINGLE wasn't explicitly set to false, keep scanning mode
-    if (!doc.containsKey("SINGLE")) {
-      SINGLE = false;  // Default to scanning mode when setting scan parameters
+    // If SINGLE or LIGHTSHEET wasn't explicitly set to false, keep scanning mode
+    if (!doc.containsKey("SINGLE") && !doc.containsKey("LIGHTSHEET")) {
+      SINGLE = false;      // Default to scanning mode when setting scan parameters
+      LIGHTSHEET = false;
     }
 
     // Update global parameters
@@ -313,6 +380,16 @@ void handleJSON(const String &jsonString) {
     Serial.print(ENABLE_TRIG_LINE ? "true" : "false");
     Serial.print(",\"ENABLE_TRIG_PIXEL\":");
     Serial.print(ENABLE_TRIG_PIXEL ? "true" : "false");
+    Serial.print(",\"LIGHTSHEET\":");
+    Serial.print(LIGHTSHEET ? "true" : "false");
+    Serial.print(",\"LS_AMPLITUDE\":");
+    Serial.print(LS_AMPLITUDE);
+    Serial.print(",\"LS_FREQUENCY\":");
+    Serial.print(LS_FREQUENCY);
+    Serial.print(",\"LS_OFFSET\":");
+    Serial.print(LS_OFFSET);
+    Serial.print(",\"LS_DELAY\":");
+    Serial.print(LS_DELAY);
     Serial.print(",\"success\":1");
     if (qid != 0) {
       Serial.print(",\"qid\":");
@@ -490,11 +567,21 @@ void app_main()
                              tPixelDwelltime, nFrames, SNAKE, SIM,
                              ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL);
 
+  // Set light-sheet parameters if in light-sheet mode
+  if (LIGHTSHEET) {
+    renderer->setLightSheetParameters(LS_AMPLITUDE, LS_FREQUENCY, LS_OFFSET, LS_DELAY);
+  }
+
   while (1) {
     // Process any incoming serial commands
     processSerial();
 
-    if (SINGLE) {
+    if (LIGHTSHEET) {
+      // In LIGHTSHEET mode, render sinusoidal Y-axis scanning
+      renderer->renderLightSheet();
+      // Short delay to allow serial processing
+      // vTaskDelay(pdMS_TO_TICKS(10));
+    } else if (SINGLE) {
       // In SINGLE mode, set galvos to stationary position
       renderer->setSinglePosition(X_POS, Y_POS);
       // Longer delay in single mode since we're not scanning

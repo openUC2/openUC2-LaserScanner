@@ -9,6 +9,8 @@
 #include "driver/timer.h"
 #include "esp_err.h"
 #include "esp_log.h"
+// include sinf
+#include <cmath>
 
 // For fast GPIO toggling on ESP32-S3:
 #include "soc/gpio_struct.h" // Gives you GPIO.out_w1ts, etc.
@@ -236,6 +238,12 @@ void SPIRenderer::setParameters(int xmin, int xmax, int ymin, int ymax, int xoff
   ENABLE_TRIG_LINE = enableTrigLine;
   ENABLE_TRIG_PIXEL = enableTrigPixel;
 
+  // Recompute light-sheet sine table if Y range changed
+  if (!lightSheetSineTable.empty())
+  {
+    computeLightSheetSineTable();
+  }
+
   printf("Setting parameters: X[%d,%d] Y[%d,%d] OFF[%d,%d] STEP[%d,%d] dwell:%d frames:%d SNAKE:%d SIM:%d TRIG[F:%d L:%d P:%d]\n",
          xmin, xmax, ymin, ymax, xoffset, yoffset, stepx, stepy, tPixelDwelltime, nFrames, snake, sim,
          enableTrigFrame, enableTrigLine, enableTrigPixel);
@@ -340,7 +348,7 @@ int clamp(int &value, int minVal, int maxVal)
 
 void SPIRenderer::drawFrame()
 {
-  ESP_LOGI(TAG, "Drawing frame %d / %d", currentFrame + 1, nFrames);
+  // ESP_LOGI(TAG, "Drawing frame %d / %d", currentFrame + 1, nFrames);
 
   // Compute SIM offset
   int simYOffset = (SIM && nFrames > 0) ? (STEP_Y * currentFrame) / nFrames : 0;
@@ -432,59 +440,58 @@ void SPIRenderer::drawFrame()
         GPIO.out_w1tc = mask_off;
       }
     }
-    if(0){
-    // invert Y direction for snake pattern
-    yStart = yEnd;
-    if ((SNAKE || SIM) && (lineNumber % 2 == 1))
+    if (0)
     {
-      yStart = Y_MIN;
-      yEnd = Y_MAX;
-      yStep = STEP_Y;
-    }
-    else
-    {
-      yStart = Y_MAX;
-      yEnd = Y_MIN;
-      yStep = -STEP_Y;
-    }
-
-    for (int dacY = yStart; (yStep > 0) ? (dacY <= yEnd) : (dacY >= yEnd); dacY += yStep)
-    {
-      // Compute DAC positions
-      int dacYw = dacY + Y_OFFSET; // clamp(dacY + Y_OFFSET + simYOffset, 0, 4095);
-
-
-      spi_transaction_t t2 = {};
-      t2.length = 16;
-      t2.flags = SPI_TRANS_USE_TXDATA;
-      t2.tx_data[0] = (0b10110000 | ((dacYw >> 8) & 0x0F));
-      t2.tx_data[1] = (dacYw & 0xFF);
-
-      // Update DACs (atomic latch)
-      GPIO.out_w1tc = (1U << PIN_NUM_LDAC);
-      spi_device_polling_transmit(spi, &t2);
-      GPIO.out_w1ts = (1U << PIN_NUM_LDAC);
-
-      // add a little delay to allow settling
-      esp_rom_delay_us(tPixelDwelltime);
-
-      // --------------------------------------------------------------
-      // PIXEL PULSE — synchronous, stable, and jitter-free
-      // --------------------------------------------------------------
-      if (ENABLE_TRIG_PIXEL)
+      // invert Y direction for snake pattern
+      yStart = yEnd;
+      if ((SNAKE || SIM) && (lineNumber % 2 == 1))
       {
-        // combine bits that should toggle together
-        uint32_t mask_on = PIXEL_BIT; // only pixel goes high per dwell
-        uint32_t mask_off = PIXEL_BIT;
-
-        // atomic HIGH + dwell + atomic LOW
-        GPIO.out_w1ts = mask_on;
-        esp_rom_delay_us(tPixelDwelltime);
-        GPIO.out_w1tc = mask_off;
+        yStart = Y_MIN;
+        yEnd = Y_MAX;
+        yStep = STEP_Y;
+      }
+      else
+      {
+        yStart = Y_MAX;
+        yEnd = Y_MIN;
+        yStep = -STEP_Y;
       }
 
+      for (int dacY = yStart; (yStep > 0) ? (dacY <= yEnd) : (dacY >= yEnd); dacY += yStep)
+      {
+        // Compute DAC positions
+        int dacYw = dacY + Y_OFFSET; // clamp(dacY + Y_OFFSET + simYOffset, 0, 4095);
+
+        spi_transaction_t t2 = {};
+        t2.length = 16;
+        t2.flags = SPI_TRANS_USE_TXDATA;
+        t2.tx_data[0] = (0b10110000 | ((dacYw >> 8) & 0x0F));
+        t2.tx_data[1] = (dacYw & 0xFF);
+
+        // Update DACs (atomic latch)
+        GPIO.out_w1tc = (1U << PIN_NUM_LDAC);
+        spi_device_polling_transmit(spi, &t2);
+        GPIO.out_w1ts = (1U << PIN_NUM_LDAC);
+
+        // add a little delay to allow settling
+        esp_rom_delay_us(tPixelDwelltime);
+
+        // --------------------------------------------------------------
+        // PIXEL PULSE — synchronous, stable, and jitter-free
+        // --------------------------------------------------------------
+        if (ENABLE_TRIG_PIXEL)
+        {
+          // combine bits that should toggle together
+          uint32_t mask_on = PIXEL_BIT; // only pixel goes high per dwell
+          uint32_t mask_off = PIXEL_BIT;
+
+          // atomic HIGH + dwell + atomic LOW
+          GPIO.out_w1ts = mask_on;
+          esp_rom_delay_us(tPixelDwelltime);
+          GPIO.out_w1tc = mask_off;
+        }
+      }
     }
-}
     lineNumber++;
   }
 
@@ -496,7 +503,7 @@ void SPIRenderer::drawFrame()
 
 void SPIRenderer::drawFrame_()
 {
-  printf("Drawing frame %d\n", currentFrame + 1);
+  // printf("Drawing frame %d\n", currentFrame + 1);
 
   // Set frame trigger if enabled
   if (ENABLE_TRIG_FRAME)
@@ -836,17 +843,20 @@ void SPIRenderer::clearPointCloud()
 void SPIRenderer::addPoint(uint16_t x, uint16_t y)
 {
   // Clamp to valid DAC range
-  if (x > 4095) x = 4095;
-  if (y > 4095) y = 4095;
+  if (x > 4095)
+    x = 4095;
+  if (y > 4095)
+    y = 4095;
 
   pointCloudX.push_back(x);
   pointCloudY.push_back(y);
   ESP_LOGD(TAG, "Added point: (%d, %d), total points: %d", x, y, pointCloudX.size());
 }
 
-void SPIRenderer::setPointCloud(const std::vector<uint16_t>& xCoords, const std::vector<uint16_t>& yCoords)
+void SPIRenderer::setPointCloud(const std::vector<uint16_t> &xCoords, const std::vector<uint16_t> &yCoords)
 {
-  if (xCoords.size() != yCoords.size()) {
+  if (xCoords.size() != yCoords.size())
+  {
     ESP_LOGE(TAG, "Point cloud X and Y coordinate arrays must be same size");
     return;
   }
@@ -860,7 +870,8 @@ void SPIRenderer::setPointCloud(const std::vector<uint16_t>& xCoords, const std:
 
 void SPIRenderer::renderPointCloud()
 {
-  if (pointCloudX.empty()) {
+  if (pointCloudX.empty())
+  {
     ESP_LOGW(TAG, "Point cloud is empty, nothing to render");
     return;
   }
@@ -868,12 +879,14 @@ void SPIRenderer::renderPointCloud()
   ESP_LOGI(TAG, "Rendering point cloud with %d points", pointCloudX.size());
 
   // Frame trigger
-  if (ENABLE_TRIG_FRAME) {
+  if (ENABLE_TRIG_FRAME)
+  {
     gpio_set_level((gpio_num_t)PIN_NUM_TRIG_FRAME, 1);
   }
 
   // Iterate through all points in the cloud
-  for (size_t i = 0; i < pointCloudX.size(); i++) {
+  for (size_t i = 0; i < pointCloudX.size(); i++)
+  {
     uint16_t dacX = pointCloudX[i];
     uint16_t dacY = pointCloudY[i];
 
@@ -903,21 +916,132 @@ void SPIRenderer::renderPointCloud()
     gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 1);
 
     // Pixel trigger
-    if (ENABLE_TRIG_PIXEL) {
+    if (ENABLE_TRIG_PIXEL)
+    {
       gpio_set_level((gpio_num_t)PIN_NUM_TRIG_PIXEL, 1);
-      if (tPixelDwelltime > 0) {
+      if (tPixelDwelltime > 0)
+      {
         esp_rom_delay_us(tPixelDwelltime);
       }
       gpio_set_level((gpio_num_t)PIN_NUM_TRIG_PIXEL, 0);
-    } else if (tPixelDwelltime > 0) {
+    }
+    else if (tPixelDwelltime > 0)
+    {
       esp_rom_delay_us(tPixelDwelltime);
     }
   }
 
   // Clear frame trigger
-  if (ENABLE_TRIG_FRAME) {
+  if (ENABLE_TRIG_FRAME)
+  {
     gpio_set_level((gpio_num_t)PIN_NUM_TRIG_FRAME, 0);
   }
 
   ESP_LOGI(TAG, "Point cloud rendering complete");
+}
+
+////////////////////////////////////////////////////////////////
+// Light-sheet mode: Set parameters
+////////////////////////////////////////////////////////////////
+void SPIRenderer::setLightSheetParameters(int amplitude, float frequency, int offset, int delay)
+{
+  LS_AMPLITUDE = amplitude;
+  // Clamp frequency to max 1000 Hz
+  LS_FREQUENCY = (frequency > 1000.0f) ? 1000.0f : frequency;
+  LS_OFFSET = offset;
+  LS_DELAY = delay;
+
+  // Recompute sine table with new parameters
+  computeLightSheetSineTable();
+
+  ESP_LOGI(TAG, "Light-sheet parameters set: amplitude=%d, frequency=%.2f Hz, offset=%d, delay=%d us, table size=%d",
+           amplitude, LS_FREQUENCY, offset, delay, lightSheetSineTable.size());
+}
+
+////////////////////////////////////////////////////////////////
+// Light-sheet mode: Pre-compute sine table
+////////////////////////////////////////////////////////////////
+void SPIRenderer::computeLightSheetSineTable()
+{
+  lightSheetSineTable.clear();
+  lightSheetIndex = 0;
+
+  // Calculate number of points based on Y range and step
+  int numPoints = (Y_MAX - Y_MIN) / STEP_Y;
+  if (numPoints <= 0)
+    numPoints = 1;
+
+  // Generate sine values for one complete cycle
+  for (int i = 0; i < numPoints; i++)
+  {
+    // Calculate angle for this point (0 to 2π)
+    float angle = 2.0f * 3.14159265359f * i / numPoints;
+    float sinValue = sinf(angle);
+
+    // Calculate Y position: y = offset + amplitude * sin(angle)
+    int dacY = LS_OFFSET + (int)(LS_AMPLITUDE * sinValue);
+
+    // Clamp to valid DAC range
+    dacY = (dacY < 0) ? 0 : ((dacY > 4095) ? 4095 : dacY);
+
+    lightSheetSineTable.push_back(dacY);
+  }
+
+  ESP_LOGI(TAG, "Light-sheet sine table computed with %d points", lightSheetSineTable.size());
+}
+
+////////////////////////////////////////////////////////////////
+// Light-sheet mode: Render sinusoidal Y-axis scanning
+////////////////////////////////////////////////////////////////
+void SPIRenderer::renderLightSheet()
+{
+  
+  /*
+  {"task":"/galvo_act","qid":1,"LIGHTSHEET":true,"Y_MIN":0,"Y_MAX":4095,"STEP_Y":500,"LS_AMPLITUDE":2000, "LS_FREQUENCY":10.0,"LS_OFFSET":2048,"LS_DELAY":100,"nFrames": 10} 
+  {"task":"/galvo_act","qid":1,"LIGHTSHEET":true,"Y_MIN":0,"Y_MAX":1000,"STEP_Y":10,"LS_AMPLITUDE":2048,"LS_FREQUENCY":10.0,"LS_OFFSET":500,"LS_DELAY":1, "nFrames": 100}
+  */
+  // If sine table is empty, compute it
+  if (lightSheetSineTable.empty())
+  {
+    computeLightSheetSineTable();
+  }
+
+  // render lightsheet immediately
+  // for n-frames
+  for (int frame = 0; frame < nFrames; frame++)
+  {
+    //printf("Light-sheet frame %d / %d\n", frame + 1, nFrames);
+    for (size_t i = 0; i < lightSheetSineTable.size(); i++)
+    {
+
+      // Get Y position from pre-computed sine table
+      int dacY = lightSheetSineTable[i];
+
+      // X position is fixed at center (2048) for light-sheet mode
+
+      // Apply offsets
+      int dacYWithOffset = dacY + Y_OFFSET;
+      dacYWithOffset = (dacYWithOffset < 0) ? 0 : ((dacYWithOffset > 4095) ? 4095 : dacYWithOffset);
+
+      // Prepare SPI transactions for X and Y
+      spi_transaction_t t2 = {};
+      t2.length = 16;
+      t2.flags = SPI_TRANS_USE_TXDATA;
+      t2.tx_data[0] = (0b10110000 | ((dacYWithOffset >> 8) & 0x0F));
+      t2.tx_data[1] = (dacYWithOffset & 0xFF);
+
+      // Send SPI data and latch
+      gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 0);
+      spi_device_polling_transmit(spi, &t2);
+      gpio_set_level((gpio_num_t)PIN_NUM_LDAC, 1);
+
+      // No triggering in light-sheet mode
+
+      // Apply delay between points
+      if (LS_DELAY > 0)
+      {
+        esp_rom_delay_us(LS_DELAY);
+      }
+    }
+  }
 }
