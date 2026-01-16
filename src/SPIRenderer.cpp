@@ -439,58 +439,7 @@ void SPIRenderer::drawFrame()
         esp_rom_delay_us(tPixelDwelltime);
         GPIO.out_w1tc = mask_off;
       }
-    }
-    if (0)
-    {
-      // invert Y direction for snake pattern
-      yStart = yEnd;
-      if ((SNAKE || SIM) && (lineNumber % 2 == 1))
-      {
-        yStart = Y_MIN;
-        yEnd = Y_MAX;
-        yStep = STEP_Y;
-      }
-      else
-      {
-        yStart = Y_MAX;
-        yEnd = Y_MIN;
-        yStep = -STEP_Y;
-      }
-
-      for (int dacY = yStart; (yStep > 0) ? (dacY <= yEnd) : (dacY >= yEnd); dacY += yStep)
-      {
-        // Compute DAC positions
-        int dacYw = dacY + Y_OFFSET; // clamp(dacY + Y_OFFSET + simYOffset, 0, 4095);
-
-        spi_transaction_t t2 = {};
-        t2.length = 16;
-        t2.flags = SPI_TRANS_USE_TXDATA;
-        t2.tx_data[0] = (0b10110000 | ((dacYw >> 8) & 0x0F));
-        t2.tx_data[1] = (dacYw & 0xFF);
-
-        // Update DACs (atomic latch)
-        GPIO.out_w1tc = (1U << PIN_NUM_LDAC);
-        spi_device_polling_transmit(spi, &t2);
-        GPIO.out_w1ts = (1U << PIN_NUM_LDAC);
-
-        // add a little delay to allow settling
-        esp_rom_delay_us(tPixelDwelltime);
-
-        // --------------------------------------------------------------
-        // PIXEL PULSE — synchronous, stable, and jitter-free
-        // --------------------------------------------------------------
-        if (ENABLE_TRIG_PIXEL)
-        {
-          // combine bits that should toggle together
-          uint32_t mask_on = PIXEL_BIT; // only pixel goes high per dwell
-          uint32_t mask_off = PIXEL_BIT;
-
-          // atomic HIGH + dwell + atomic LOW
-          GPIO.out_w1ts = mask_on;
-          esp_rom_delay_us(tPixelDwelltime);
-          GPIO.out_w1tc = mask_off;
-        }
-      }
+      //ESP_LOGI(TAG, "Drew pixel X:%d Y:%d", dacXw, dacYw);
     }
     lineNumber++;
   }
@@ -727,7 +676,10 @@ void SPIRenderer::drawFrame_()
 ////////////////////////////////////////////////////////////////
 void SPIRenderer::start()
 {
+  for (int iFrame = 0; iFrame < nFrames; iFrame++)
+  {
   drawFrame();
+  }
 }
 
 ////////////////////////////////////////////////////////////////
@@ -943,19 +895,18 @@ void SPIRenderer::renderPointCloud()
 ////////////////////////////////////////////////////////////////
 // Light-sheet mode: Set parameters
 ////////////////////////////////////////////////////////////////
-void SPIRenderer::setLightSheetParameters(int amplitude, float frequency, int offset, int delay)
+void SPIRenderer::setLightSheetParameters(int amplitude, int numPoints, int offset, int delay)
 {
   LS_AMPLITUDE = amplitude;
-  // Clamp frequency to max 1000 Hz
-  LS_FREQUENCY = (frequency > 1000.0f) ? 1000.0f : frequency;
+  LS_NUM_POINTS = numPoints;
   LS_OFFSET = offset;
   LS_DELAY = delay;
 
   // Recompute sine table with new parameters
   computeLightSheetSineTable();
 
-  ESP_LOGI(TAG, "Light-sheet parameters set: amplitude=%d, frequency=%.2f Hz, offset=%d, delay=%d us, table size=%d",
-           amplitude, LS_FREQUENCY, offset, delay, lightSheetSineTable.size());
+  ESP_LOGI(TAG, "Light-sheet parameters set: amplitude=%d, numPoints=%d, offset=%d, delay=%d us, table size=%d",
+           amplitude, numPoints, offset, delay, lightSheetSineTable.size());
 }
 
 ////////////////////////////////////////////////////////////////
@@ -966,8 +917,8 @@ void SPIRenderer::computeLightSheetSineTable()
   lightSheetSineTable.clear();
   lightSheetIndex = 0;
 
-  // Calculate number of points based on Y range and step
-  int numPoints = (Y_MAX - Y_MIN) / STEP_Y;
+  // Use LS_NUM_POINTS directly instead of calculating from Y range and step
+  int numPoints = LS_NUM_POINTS;
   if (numPoints <= 0)
     numPoints = 1;
 

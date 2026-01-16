@@ -36,6 +36,9 @@ uint8_t binaryBufferIndex = 0;
 // Renderer pointer
 SPIRenderer *renderer = nullptr;
 
+// Task handle for serial processing
+TaskHandle_t serialTaskHandle = nullptr;
+
 // Default parameters
 int X_MIN = 0;
 int X_MAX = 2048;
@@ -61,7 +64,8 @@ int Y_POS = 2048;     // Y position for single point mode (0-4095)
 // Light-sheet mode parameters
 bool LIGHTSHEET = false;   // Light-sheet mode (sinusoidal Y-axis scanning)
 int LS_AMPLITUDE = 2048;   // Amplitude of sinusoidal pattern (0-4095)
-float LS_FREQUENCY = 1.0;  // Frequency in Hz
+float LS_FREQUENCY = 1.0;  // Frequency in Hz (kept for backward compatibility, not used in code)
+int LS_NUM_POINTS = 100;   // Number of points in sine table (replaces frequency-based calculation)
 int LS_OFFSET = 2048;      // Y-axis offset (center position, 0-4095)
 int LS_DELAY = 1000;       // Delay between points in microseconds
 
@@ -96,6 +100,7 @@ void saveParameters() {
   preferences.putBool("LIGHTSHEET", LIGHTSHEET);
   preferences.putInt("LS_AMP", LS_AMPLITUDE);
   preferences.putFloat("LS_FREQ", LS_FREQUENCY);
+  preferences.putInt("LS_NUMPTS", LS_NUM_POINTS);
   preferences.putInt("LS_OFFSET", LS_OFFSET);
   preferences.putInt("LS_DELAY", LS_DELAY);
   preferences.end();
@@ -105,19 +110,24 @@ void saveParameters() {
 // -------------------------------------------------------------------
 // HELPER: Load parameters from preferences
 // -------------------------------------------------------------------
-void loadParameters() {
+void loadParameters() { // intialize with stored values: 
+  /*
+  {"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":0,"Y_MIN":0,"Y_MAX":4000,"STEP_X":1,"STEP_Y":32,"tPixelDwelltime":10,"nFrames":1000,"SNAKE":true, "ENABLE_TRIG_FRAME":false, "ENABLE_TRIG_LINE":false,"ENABLE_TRIG_PIXEL":false,"success":1,"qid":1}
+  {"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":0,"Y_MIN":0,"Y_MAX":4000,"STEP_X":1,"STEP_Y":8,"tPixelDwelltime":10,"nFrames":1000,"SNAKE":true, "ENABLE_TRIG_FRAME":false, "ENABLE_TRIG_LINE":false,"ENABLE_TRIG_PIXEL":false,"success":1,"qid":1}
+  */
+
   preferences.begin("galvo", true); // read-only mode
   X_MIN = preferences.getInt("X_MIN", 0);
-  X_MAX = preferences.getInt("X_MAX", 2048);
+  X_MAX = preferences.getInt("X_MAX", 0);
   Y_MIN = preferences.getInt("Y_MIN", 0);
-  Y_MAX = preferences.getInt("Y_MAX", 2048);
+  Y_MAX = preferences.getInt("Y_MAX", 4000);
   X_OFFSET = preferences.getInt("X_OFFSET", 0);
-  Y_OFFSET = preferences.getInt("Y_OFFSET", 0);
+  Y_OFFSET = preferences.getInt("Y_OFFSET", 2000);
   STEP_X = preferences.getInt("STEP_X", 8);
-  STEP_Y = preferences.getInt("STEP_Y", 8);
+  STEP_Y = preferences.getInt("STEP_Y", 32);
   tPixelDwelltime = preferences.getInt("tPixelDwell", 0);
-  nFrames = preferences.getInt("nFrames", 10);
-  SNAKE = preferences.getBool("SNAKE", false);
+  nFrames = preferences.getInt("nFrames", 1000);
+  SNAKE = preferences.getBool("SNAKE", 1);
   SIM = preferences.getBool("SIM", false);
   ENABLE_TRIG_FRAME = preferences.getBool("TRIG_FRAME", true);
   ENABLE_TRIG_LINE = preferences.getBool("TRIG_LINE", true);
@@ -128,11 +138,12 @@ void loadParameters() {
   LIGHTSHEET = preferences.getBool("LIGHTSHEET", false);
   LS_AMPLITUDE = preferences.getInt("LS_AMP", 2048);
   LS_FREQUENCY = preferences.getFloat("LS_FREQ", 1.0);
+  LS_NUM_POINTS = preferences.getInt("LS_NUMPTS", 100);
   LS_OFFSET = preferences.getInt("LS_OFFSET", 2048);
   LS_DELAY = preferences.getInt("LS_DELAY", 1000);
   preferences.end();
-  ESP_LOGI(TAG, "Parameters loaded from preferences: X_MIN=%d X_MAX=%d Y_MIN=%d Y_MAX=%d X_OFF=%d Y_OFF=%d STEP_X=%d STEP_Y=%d tPixelDwell=%d nFrames=%d SNAKE=%d SIM=%d TRIG_F=%d TRIG_L=%d TRIG_P=%d SINGLE=%d X_POS=%d Y_POS=%d LIGHTSHEET=%d LS_AMP=%d LS_FREQ=%.2f LS_OFF=%d LS_DELAY=%d",
-           X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y, tPixelDwelltime, nFrames, SNAKE, SIM, ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL, SINGLE, X_POS, Y_POS, LIGHTSHEET, LS_AMPLITUDE, LS_FREQUENCY, LS_OFFSET, LS_DELAY);
+  ESP_LOGI(TAG, "Parameters loaded from preferences: X_MIN=%d X_MAX=%d Y_MIN=%d Y_MAX=%d X_OFF=%d Y_OFF=%d STEP_X=%d STEP_Y=%d tPixelDwell=%d nFrames=%d SNAKE=%d SIM=%d TRIG_F=%d TRIG_L=%d TRIG_P=%d SINGLE=%d X_POS=%d Y_POS=%d LIGHTSHEET=%d LS_AMP=%d LS_FREQ=%.2f LS_NUMPTS=%d LS_OFF=%d LS_DELAY=%d",
+           X_MIN, X_MAX, Y_MIN, Y_MAX, X_OFFSET, Y_OFFSET, STEP_X, STEP_Y, tPixelDwelltime, nFrames, SNAKE, SIM, ENABLE_TRIG_FRAME, ENABLE_TRIG_LINE, ENABLE_TRIG_PIXEL, SINGLE, X_POS, Y_POS, LIGHTSHEET, LS_AMPLITUDE, LS_FREQUENCY, LS_NUM_POINTS, LS_OFFSET, LS_DELAY);
 }
 
 
@@ -194,7 +205,8 @@ void handleJSON(const String &jsonString) {
       if (LIGHTSHEET) {
         // In light-sheet mode, get parameters
         LS_AMPLITUDE = doc["LS_AMPLITUDE"] | LS_AMPLITUDE;
-        LS_FREQUENCY = doc["LS_FREQUENCY"] | LS_FREQUENCY;
+        LS_FREQUENCY = doc["LS_FREQUENCY"] | LS_FREQUENCY;  // Kept for backward compatibility
+        LS_NUM_POINTS = doc["LS_NUM_POINTS"] | LS_NUM_POINTS;
         LS_OFFSET = doc["LS_OFFSET"] | LS_OFFSET;
         LS_DELAY = doc["LS_DELAY"] | LS_DELAY;
 
@@ -211,7 +223,7 @@ void handleJSON(const String &jsonString) {
 
         // Update renderer if it exists
         if (renderer != nullptr) {
-          renderer->setLightSheetParameters(LS_AMPLITUDE, LS_FREQUENCY, LS_OFFSET, LS_DELAY);
+          renderer->setLightSheetParameters(LS_AMPLITUDE, LS_NUM_POINTS, LS_OFFSET, LS_DELAY);
         }
 
         // Report success
@@ -219,6 +231,8 @@ void handleJSON(const String &jsonString) {
         Serial.print(LS_AMPLITUDE);
         Serial.print(",\"LS_FREQUENCY\":");
         Serial.print(LS_FREQUENCY);
+        Serial.print(",\"LS_NUM_POINTS\":");
+        Serial.print(LS_NUM_POINTS);
         Serial.print(",\"LS_OFFSET\":");
         Serial.print(LS_OFFSET);
         Serial.print(",\"LS_DELAY\":");
@@ -386,6 +400,8 @@ void handleJSON(const String &jsonString) {
     Serial.print(LS_AMPLITUDE);
     Serial.print(",\"LS_FREQUENCY\":");
     Serial.print(LS_FREQUENCY);
+    Serial.print(",\"LS_NUM_POINTS\":");
+    Serial.print(LS_NUM_POINTS);
     Serial.print(",\"LS_OFFSET\":");
     Serial.print(LS_OFFSET);
     Serial.print(",\"LS_DELAY\":");
@@ -547,6 +563,18 @@ void processSerial() {
   }
 }
 
+// -------------------------------------------------------------------
+// FreeRTOS Task: Serial processing task
+// -------------------------------------------------------------------
+void serialTask(void *pvParameters) {
+  ESP_LOGI(TAG, "Serial processing task started");
+  while (1) {
+    processSerial();
+    // Small delay to prevent task from hogging CPU
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+}
+
 
 void app_main()
 {
@@ -569,12 +597,22 @@ void app_main()
 
   // Set light-sheet parameters if in light-sheet mode
   if (LIGHTSHEET) {
-    renderer->setLightSheetParameters(LS_AMPLITUDE, LS_FREQUENCY, LS_OFFSET, LS_DELAY);
+    renderer->setLightSheetParameters(LS_AMPLITUDE, LS_NUM_POINTS, LS_OFFSET, LS_DELAY);
   }
 
+  // Create serial processing task for asynchronous command handling
+  xTaskCreatePinnedToCore(
+      serialTask,           // Task function
+      "SerialTask",         // Task name
+      4096,                 // Stack size (bytes)
+      NULL,                 // Task parameters
+      1,                    // Priority (1 = low priority)
+      &serialTaskHandle,    // Task handle
+      0                     // Core ID (0 = core 0, 1 = core 1)
+  );
+  ESP_LOGI(TAG, "Serial task created on core 0");
+
   while (1) {
-    // Process any incoming serial commands
-    processSerial();
 
     if (LIGHTSHEET) {
       // In LIGHTSHEET mode, render sinusoidal Y-axis scanning

@@ -36,6 +36,13 @@ Retrieves device identification and status information.
 --
 ```
 
+# TODO:
+- ✅ Serial communication moved to asynchronous FreeRTOS task
+- ✅ Parameters are stored in ESP32 Preferences (non-volatile storage)
+- ✅ Added LS_NUM_POINTS parameter for direct control of sine points count
+- ✅ LS_FREQUENCY kept for backward compatibility but not used in calculations
+- ✅ Automated ESP32S3 boot mode via upload_flags in platformio.ini
+
 ### 2. Set Galvo Parameters - `/galvo_act`
 
 Updates the galvo scanner parameters for X/Y scanning and saves them to persistent storage.
@@ -43,11 +50,13 @@ Updates the galvo scanner parameters for X/Y scanning and saves them to persiste
 **BEWARE: Y is pixelclock**
 **Request:**
 ```json
-{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":0,"Y_MIN":0,"Y_MAX":4094,"STEP_X":1,"STEP_Y":10,"tPixelDwelltime":0,"nFrames":1,"SNAKE":false}
+{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":0,"Y_MIN":0,"Y_MAX":2048,"STEP_X":16,"STEP_Y":16,"tPixelDwelltime":0,"nFrames":100,"SNAKE":true}
 
 {"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":512,"Y_MIN":0,"Y_MAX":512,"STEP_X":2,"STEP_Y":2,"tPixelDwelltime":10,"nFrames":1,"SNAKE":false}
 
 {"task":"/galvo_act","X_MIN":0,"X_MAX":2048,"Y_MIN":0,"Y_MAX":2048,"X_OFFSET":0,"Y_OFFSET":0,"STEP_X":10,"STEP_Y":10,"tPixelDwelltime":0,"nFrames":10,"SNAKE":false,"SIM":false,"SINGLE":false,"X_POS":2048,"Y_POS":2048,"ENABLE_TRIG_FRAME":true,"ENABLE_TRIG_LINE":true,"ENABLE_TRIG_PIXEL":true,"success":1,"qid":1}
+
+{"task":"/galvo_act","qid":1,"LIGHTSHEET":0,"LS_NUM_POINTS":200,"LS_AMPLITUDE":4000,"LS_OFFSET":2000,"LS_DELAY":10, "FRAMES":10}
 
 {"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":1024,"Y_MIN":0,"Y_MAX":1024,"STEP_X":4,"STEP_Y":4,"tPixelDwelltime":0,"nFrames":10,"SNAKE":false, "SIM":false, "SINGLE":false}
 
@@ -55,7 +64,12 @@ Updates the galvo scanner parameters for X/Y scanning and saves them to persiste
 
 {"task":"/galvo_act","qid":1,"SINGLE":true,"X_POS":2048,"Y_POS":2048}
 
-{"task":"/galvo_act","qid":1,"LIGHTSHEET":true,"LS_AMPLITUDE":1000,"LS_FREQUENCY":100.0,"LS_OFFSET":1000,"LS_DELAY":0}
+{"task":"/galvo_act","qid":1,"LIGHTSHEET":true,"LS_AMPLITUDE":2000,"LS_FREQUENCY":20.0,"LS_OFFSET":1000,"LS_DELAY":0}
+
+
+- make num points adjustagble via serial
+- make x=y on output 
+- 
 
 ```
 
@@ -78,7 +92,8 @@ Updates the galvo scanner parameters for X/Y scanning and saves them to persiste
 - `Y_POS` (int): Y position for single point mode (0-4095, default: 2048)
 - `LIGHTSHEET` (bool): Enable light-sheet mode - sinusoidal Y-axis scanning only (default: false)
 - `LS_AMPLITUDE` (int): Amplitude of sinusoidal pattern for light-sheet mode (0-4095, default: 2048)
-- `LS_FREQUENCY` (float): Frequency of sinusoidal pattern in Hz (default: 1.0)
+- `LS_NUM_POINTS` (int): Number of points in sine table - directly controls sine wave resolution (default: 100)
+- `LS_FREQUENCY` (float): Kept for backward compatibility, not used in calculations (default: 1.0)
 - `LS_OFFSET` (int): Y-axis offset (center position) for light-sheet mode (0-4095, default: 2048)
 - `LS_DELAY` (int): Delay between points in microseconds for light-sheet mode (default: 1000)
 - `ENABLE_TRIG_FRAME` (bool): Enable frame trigger signal (default: true)
@@ -177,7 +192,11 @@ The scanner alternates direction, eliminating the need to return to the start po
 
 **Usage Example:**
 ```json
-{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":10000,"Y_MIN":0,"Y_MAX":10000,"STEP":100,"SNAKE":true}
+{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":1024,"Y_MIN":0,"Y_MAX":1024,"STEP_X":16,"STEP_Y":16,"SNAKE":true,"nFrames": 1,"tPixelDwelltime":1}
+{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":2048,"Y_MIN":0,"Y_MAX":2048,"STEP_X":8,"STEP_Y":8,"SNAKE":true,"nFrames": 2,"tPixelDwelltime":0}
+{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":2048,"Y_MIN":0,"Y_MAX":2048,"STEP_X":2,"STEP_Y":2,"SNAKE":false,"nFrames": 2,"tPixelDwelltime":0}
+
+{"task":"/galvo_act","qid":1,"X_MIN":0,"X_MAX":2048,"Y_MIN":0,"Y_MAX":2048,"STEP_X":16,"STEP_Y":16,"SNAKE":false,"nFrames": 2,"tPixelDwelltime":0}
 ```
 
 ### Single Point Positioning Mode
@@ -202,29 +221,27 @@ The `LIGHTSHEET` mode enables a specialized scanning pattern for light-sheet mic
 
 - The X-axis remains fixed at center position (2048)
 - The Y-axis scans continuously through a pre-computed sinusoidal pattern
-- The number of sine points is determined by (Y_MAX - Y_MIN) / STEP_Y
+- The number of sine points is directly specified via `LS_NUM_POINTS` parameter
 - The delay between points controls the scanning speed (and effectively the frequency)
 - No trigger signals are generated in this mode
 
 **Parameters:**
 - `LIGHTSHEET` (bool): Enable light-sheet mode
-- `Y_MIN` (int): Minimum Y value for sine calculation (default: 0)
-- `Y_MAX` (int): Maximum Y value for sine calculation (default: 4095)
-- `STEP_Y` (int): Step size that determines number of points in sine table (default: 20)
+- `LS_NUM_POINTS` (int): Number of points in sine table (directly controls resolution, default: 100)
 - `LS_AMPLITUDE` (int): Amplitude of the sine wave (0-4095, defines scan range)
-- `LS_FREQUENCY` (float): Frequency in Hz (max 100 Hz, for reference/documentation)
+- `LS_FREQUENCY` (float): Kept for backward compatibility, not used in calculations
 - `LS_OFFSET` (int): Center position on Y-axis (0-4095, default: 2048)
 - `LS_DELAY` (int): Delay between points in microseconds (controls actual scanning speed)
 
 **How it works:**
-1. A sine table is pre-computed with (Y_MAX - Y_MIN) / STEP_Y points
+1. A sine table is pre-computed with `LS_NUM_POINTS` points
 2. Each point represents one position in a complete sine cycle
 3. The scanner iterates through the table with LS_DELAY between each point
-4. Actual frequency = 1 / (table_size × LS_DELAY × 10^-6) Hz
+4. Actual frequency = 1 / (LS_NUM_POINTS × LS_DELAY × 10^-6) Hz
 
 **Usage Example:**
 ```json
-{"task":"/galvo_act","qid":1,"LIGHTSHEET":true,"Y_MIN":0,"Y_MAX":4095,"STEP_Y":20,"LS_AMPLITUDE":2000,"LS_FREQUENCY":1.0,"LS_OFFSET":2000,"LS_DELAY":100}
+{"task":"/galvo_act","qid":1,"LIGHTSHEET":true,"LS_NUM_POINTS":200,"LS_AMPLITUDE":2000,"LS_OFFSET":2000,"LS_DELAY":100}
 ```
 
 **Benefits of Light-Sheet Mode:**
@@ -232,12 +249,33 @@ The `LIGHTSHEET` mode enables a specialized scanning pattern for light-sheet mic
 - Predictable, deterministic scanning pattern
 - Number of points controlled by Y range and step size
 - Delay parameter allows precise control of scanning speed
+- Direct control over number of points via LS_NUM_POINTS
+- Delay parameter allows precise control of scanning speed
 - No triggering overhead for faster operation
-- Maximum frequency limited to 100 Hz to prevent timing issues
+- LS_FREQUENCY kept for backward compatibility but calculations use LS_NUM_POINTS
 
 To exit light-sheet mode and return to normal scanning, send a command with `LIGHTSHEET` set to false or send a scanning configuration without the `LIGHTSHEET` parameter.
 
-## Usage Examples
+## Implementation Notes
+
+### Asynchronous Serial Communication
+The serial interface now runs in a dedicated FreeRTOS task, allowing:
+- Non-blocking parameter updates during scanning operations
+- Continuous galvo operation while processing commands
+- Better responsiveness and system stability
+
+### Persistent Storage
+All parameters set via `/galvo_act` are automatically saved to ESP32 Preferences (non-volatile storage) and will be restored on device reboot.
+
+### Automated Boot Mode (ESP32S3)
+The platformio.ini configuration includes upload flags to automatically reset the ESP32S3 into boot mode:
+```ini
+upload_flags =
+    --before=default_reset
+    --after=hard_reset
+    --chip=esp32s3
+```
+This eliminates the need to manually press boot/reset buttons during upload
 
 ### Using Python
 

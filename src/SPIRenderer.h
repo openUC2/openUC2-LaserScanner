@@ -84,7 +84,7 @@ private:
   
   // Light-sheet mode parameters
   int LS_AMPLITUDE = 2048;   // Amplitude of sinusoidal pattern
-  float LS_FREQUENCY = 1.0;  // Frequency in Hz (max 100 Hz)
+  int LS_NUM_POINTS = 100;   // Number of points in sine table
   int LS_OFFSET = 2048;      // Y-axis offset (center position)
   int LS_DELAY = 1000;       // Delay between points in microseconds
   std::vector<int> lightSheetSineTable;  // Pre-computed sine table
@@ -106,8 +106,8 @@ public:
   void setSinglePosition(int xpos, int ypos);  // Set galvos to a stationary position
   
   // Light-sheet mode methods
-  void setLightSheetParameters(int amplitude, float frequency, int offset, int delay);
-  void computeLightSheetSineTable();  // Pre-compute sine table based on Y_MIN, Y_MAX, STEP_Y
+  void setLightSheetParameters(int amplitude, int numPoints, int offset, int delay);
+  void computeLightSheetSineTable();  // Pre-compute sine table based on LS_NUM_POINTS
   void renderLightSheet();  // Render sinusoidal Y-axis scanning
   
   // Point cloud methods
