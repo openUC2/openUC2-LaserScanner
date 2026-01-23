@@ -233,11 +233,6 @@ pio run -e UC2_3_Xiao -t upload
 pio device monitor
 ```
 
-### ESP-IDF
-```bash
-idf.py build
-idf.py flash monitor
-```
 
 ## Usage Example
 
@@ -320,11 +315,3 @@ send_command(0x02)
 - Hardware timer triggers
 - Bidirectional scanning
 
-## License
-
-See LICENSE file in repository root.
-
-## Authors
-
-- Original implementation: atomic14
-- Modular refactor: Copilot (2026)
