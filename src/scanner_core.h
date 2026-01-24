@@ -59,12 +59,14 @@ public:
     ~ScannerCore();
 
     /**
-     * @brief Initialize scanner with DAC and trigger pin
+     * @brief Initialize scanner with DAC and trigger pins
      * @param dac Initialized MCP4822 DAC instance
-     * @param trigger_pin GPIO pin for pixel trigger (-1 to disable)
+     * @param trigger_pin_pixel GPIO pin for pixel trigger
+     * @param trigger_pin_line GPIO pin for line trigger  
+     * @param trigger_pin_frame GPIO pin for frame trigger
      * @return true if successful
      */
-    bool init(MCP4822* dac, int trigger_pin);
+    bool init(MCP4822* dac, int trigger_pin_pixel, int trigger_pin_line, int trigger_pin_frame);
 
     /**
      * @brief Set scan configuration
@@ -107,7 +109,9 @@ public:
 private:
     // DAC interface
     MCP4822* dac_ = nullptr;
-    int trigger_pin_ = -1;
+    int trigger_pin_pixel_ = -1;
+    int trigger_pin_line_ = -1;
+    int trigger_pin_frame_ = -1;
 
     // Configuration
     ScanConfig config_;
@@ -131,7 +135,9 @@ private:
     void buildLineProfile();
     uint16_t computeY(uint16_t line) const;
     uint16_t applyXMap(uint16_t x) const;
-    void triggerPulse(uint16_t delay_us, uint16_t width_us);
+    void triggerPulsePixel(uint16_t dwell_us);
+    void triggerPulseLine();
+    void triggerPulseFrame();
     
     static inline uint16_t clamp12(int v) {
         if (v < 0) return 0;

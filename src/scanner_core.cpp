@@ -3,6 +3,8 @@
 #include "esp_timer.h"
 #include "esp_task_wdt.h"
 #include "driver/gpio.h"
+#include "soc/gpio_struct.h"
+#include "esp_rom_sys.h"
 #include <cmath>
 #include <cstring>
 
@@ -13,17 +15,17 @@ ScannerCore::ScannerCore()
     config_mutex_ = xSemaphoreCreateMutex();
     
     // Set default configuration
-    config_.nx = 256;
-    config_.ny = 256;
-    config_.x_min = 500;
-    config_.x_max = 3500;
-    config_.y_min = 500;
-    config_.y_max = 3500;
-    config_.pre_samples = 16;
-    config_.fly_samples = 64;
-    config_.sample_period_us = 20;
-    config_.trig_delay_us = 3;
-    config_.trig_width_us = 2;
+    config_.nx = 512;
+    config_.ny = 512;
+    config_.x_min = 1500;
+    config_.x_max = 4000;
+    config_.y_min = 1500;
+    config_.y_max = 4000;
+    config_.pre_samples = 4;
+    config_.fly_samples = 16;
+    config_.sample_period_us = 0;
+    config_.trig_delay_us = 0;
+    config_.trig_width_us = 0;
     config_.line_settle_samples = 0;
     config_.enable_trigger = 1;
     config_.apply_x_lut = 0;
@@ -38,7 +40,7 @@ ScannerCore::~ScannerCore()
     }
 }
 
-bool ScannerCore::init(MCP4822* dac, int trigger_pin)
+bool ScannerCore::init(MCP4822* dac, int trigger_pin_pixel, int trigger_pin_line, int trigger_pin_frame)
 {
     if (!dac) {
         ESP_LOGE(TAG, "DAC pointer is null");
@@ -46,19 +48,32 @@ bool ScannerCore::init(MCP4822* dac, int trigger_pin)
     }
 
     dac_ = dac;
-    trigger_pin_ = trigger_pin;
+    trigger_pin_pixel_ = trigger_pin_pixel;
+    trigger_pin_line_ = trigger_pin_line;
+    trigger_pin_frame_ = trigger_pin_frame;
 
-    // Configure trigger pin
-    if (trigger_pin_ >= 0) {
+    // Configure all three trigger pins
+    uint32_t pin_mask = 0;
+    if (trigger_pin_pixel_ >= 0) pin_mask |= (1ULL << trigger_pin_pixel_);
+    if (trigger_pin_line_ >= 0) pin_mask |= (1ULL << trigger_pin_line_);
+    if (trigger_pin_frame_ >= 0) pin_mask |= (1ULL << trigger_pin_frame_);
+    
+    if (pin_mask != 0) {
         gpio_config_t io = {};
         io.intr_type = GPIO_INTR_DISABLE;
         io.mode = GPIO_MODE_OUTPUT;
-        io.pin_bit_mask = (1ULL << trigger_pin_);
+        io.pin_bit_mask = pin_mask;
         io.pull_down_en = GPIO_PULLDOWN_DISABLE;
         io.pull_up_en = GPIO_PULLUP_DISABLE;
         gpio_config(&io);
-        gpio_set_level((gpio_num_t)trigger_pin_, 0);
-        ESP_LOGI(TAG, "Trigger pin configured: GPIO%d", trigger_pin_);
+        
+        // Initialize all triggers low
+        if (trigger_pin_pixel_ >= 0) gpio_set_level((gpio_num_t)trigger_pin_pixel_, 0);
+        if (trigger_pin_line_ >= 0) gpio_set_level((gpio_num_t)trigger_pin_line_, 0);
+        if (trigger_pin_frame_ >= 0) gpio_set_level((gpio_num_t)trigger_pin_frame_, 0);
+        
+        ESP_LOGI(TAG, "Trigger pins configured: Pixel=GPIO%d, Line=GPIO%d, Frame=GPIO%d", 
+                 trigger_pin_pixel_, trigger_pin_line_, trigger_pin_frame_);
     }
 
     // Build initial line profile
@@ -219,22 +234,46 @@ uint16_t ScannerCore::applyXMap(uint16_t x) const
     return x_map_[x & 0x0FFF];
 }
 
-void ScannerCore::triggerPulse(uint16_t delay_us, uint16_t width_us)
+void ScannerCore::triggerPulsePixel(uint16_t dwell_us)
 {
-    if (trigger_pin_ < 0) return;
+    if (trigger_pin_pixel_ < 0) return;
     
-    if (delay_us) ets_delay_us(delay_us);
-    gpio_set_level((gpio_num_t)trigger_pin_, 1);
-    if (width_us) ets_delay_us(width_us);
-    gpio_set_level((gpio_num_t)trigger_pin_, 0);
+    // Fast GPIO register access for minimal jitter
+    GPIO.out_w1ts = (1U << trigger_pin_pixel_);
+    if (dwell_us > 0) {
+        esp_rom_delay_us(dwell_us);
+    }
+    GPIO.out_w1tc = (1U << trigger_pin_pixel_);
+}
+
+void ScannerCore::triggerPulseLine()
+{
+    if (trigger_pin_line_ < 0) return;
+    
+    // 5µs pulse like SPIRenderer
+    GPIO.out_w1ts = (1U << trigger_pin_line_);
+    esp_rom_delay_us(5);
+    GPIO.out_w1tc = (1U << trigger_pin_line_);
+}
+
+void ScannerCore::triggerPulseFrame()
+{
+    if (trigger_pin_frame_ < 0) return;
+    
+    // 5µs pulse like SPIRenderer
+    GPIO.out_w1ts = (1U << trigger_pin_frame_);
+    esp_rom_delay_us(5);
+    GPIO.out_w1tc = (1U << trigger_pin_frame_);
 }
 
 void ScannerCore::scannerTask()
 {
     ESP_LOGI(TAG, "Scanner task started on core %d", xPortGetCoreID());
     
-    // Unsubscribe from task watchdog (tight timing loop can't yield)
+    // CRITICAL: Unsubscribe this task from task watchdog
+    // The tight timing loop cannot yield, so we must disable watchdog monitoring
     esp_task_wdt_delete(NULL);
+    ESP_LOGI(TAG, "Task watchdog disabled for scanner task");
 
     while (true) {
         if (!running_) {
@@ -242,7 +281,7 @@ void ScannerCore::scannerTask()
             continue;
         }
 
-        // Get current configuration
+        // Get current configuration (snapshot for this frame)
         ScanConfig cfg;
         xSemaphoreTake(config_mutex_, portMAX_DELAY);
         cfg = config_;
@@ -258,27 +297,44 @@ void ScannerCore::scannerTask()
         const uint32_t img_start = cfg.pre_samples;
         const uint32_t img_end = cfg.pre_samples + cfg.nx;
 
-        // Scan all lines
+        // ----------------------------------------------------------------------
+        // FRAME TRIGGER - Once at start of frame (like SPIRenderer)
+        // ----------------------------------------------------------------------
+        if (cfg.enable_trigger) {
+            triggerPulseFrame();
+        }
+
+        int lineNumber = 0;
+
+        // ----------------------------------------------------------------------
+        // X-loop: Scan all lines (Y steps)
+        // ----------------------------------------------------------------------
         for (uint16_t ly = 0; ly < cfg.ny && running_; ++ly) {
             line_idx_ = ly;
 
-            // Set Y position for this line
+            // LINE TRIGGER - Once per line (like SPIRenderer)
+            if (cfg.enable_trigger) {
+                triggerPulseLine();
+            }
+
+            // Compute Y position for this line
             uint16_t y12;
             xSemaphoreTake(config_mutex_, portMAX_DELAY);
             y12 = computeY(ly);
             bool do_lut = (config_.apply_x_lut != 0) && x_map_valid_;
             bool do_trig = (config_.enable_trigger != 0);
             uint16_t sp_us = config_.sample_period_us;
-            uint16_t tdelay = config_.trig_delay_us;
-            uint16_t twidth = config_.trig_width_us;
             xSemaphoreGive(config_mutex_);
 
+            // Set Y position once per line
             dac_->setY(y12);
             dac_->ldacPulse();
 
             int64_t next_t = esp_timer_get_time();
 
-            // Scan one line
+            // ------------------------------------------------------------------
+            // Scan one line (all X samples including pre/imaging/flyback/settle)
+            // ------------------------------------------------------------------
             for (uint32_t i = 0; i < line_len && running_; ++i) {
                 next_t += sp_us;
 
@@ -286,13 +342,14 @@ void ScannerCore::scannerTask()
                 uint16_t x12 = line_x_[i];
                 if (do_lut) x12 = applyXMap(x12);
 
-                // Update X position
+                // Update X position via DAC
                 dac_->setX(x12);
                 dac_->ldacPulse();
 
-                // Trigger during imaging region only
+                // PIXEL TRIGGER - Only during imaging region (like SPIRenderer)
+                // Use sp_us as dwell time for pixel trigger
                 if (do_trig && (i >= img_start) && (i < img_end)) {
-                    triggerPulse(tdelay, twidth);
+                    triggerPulsePixel(sp_us);
                 }
 
                 // Timing control - busy wait for precise timing
@@ -307,6 +364,8 @@ void ScannerCore::scannerTask()
                     }
                 }
             }
+
+            lineNumber++;
         }
 
         frame_idx_++;

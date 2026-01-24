@@ -13,7 +13,11 @@ constexpr int PIN_SPI_MOSI = 9;   // D8 (GPIO9)
 constexpr int PIN_SPI_SCLK = 7;   // D9 (GPIO7)
 constexpr int PIN_SPI_CS   = 8;   // D10 (GPIO8)
 constexpr int PIN_DAC_LDAC = 6;   // D7 (GPIO6)
-constexpr int PIN_TRIGGER  = 2;   // D1 (GPIO2)
+
+// 3-Trigger system for camera synchronization
+constexpr int PIN_TRIGGER_PIXEL = 2;  // D1 (GPIO2)
+constexpr int PIN_TRIGGER_LINE  = 3;  // D2 (GPIO3)
+constexpr int PIN_TRIGGER_FRAME = 4;  // D3 (GPIO4)
 
 constexpr uart_port_t UART_PORT = UART_NUM_0;
 constexpr int UART_BAUD = 921600;
@@ -46,8 +50,8 @@ extern "C" void app_main(void)
         return;
     }
 
-    // Initialize scanner
-    if (!g_scanner.init(&g_dac, PIN_TRIGGER)) {
+    // Initialize scanner with 3-trigger system
+    if (!g_scanner.init(&g_dac, PIN_TRIGGER_PIXEL, PIN_TRIGGER_LINE, PIN_TRIGGER_FRAME)) {
         ESP_LOGE(TAG, "Scanner initialization failed");
         return;
     }
