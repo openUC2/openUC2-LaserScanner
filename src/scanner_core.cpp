@@ -15,16 +15,16 @@ ScannerCore::ScannerCore()
     config_mutex_ = xSemaphoreCreateMutex();
     
     // Set default configuration
-    config_.nx = 512;
-    config_.ny = 512;
+    config_.nx = 256;
+    config_.ny = 256;
     config_.x_min = 1500;
     config_.x_max = 4000;
     config_.y_min = 1500;
     config_.y_max = 4000;
-    config_.pre_samples = 4;
-    config_.fly_samples = 16;
-    config_.sample_period_us = 0;
-    config_.trig_delay_us = 0;
+    config_.pre_samples = 20;
+    config_.fly_samples = 64;
+    config_.sample_period_us = 0; // width of trigger frame 
+    config_.trig_delay_us = 0; // TODO: not 
     config_.trig_width_us = 0;
     config_.line_settle_samples = 0;
     config_.enable_trigger = 1;
