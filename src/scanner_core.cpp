@@ -18,9 +18,9 @@ ScannerCore::ScannerCore()
     config_.nx = 256;
     config_.ny = 256;
     config_.x_min = 1500;
-    config_.x_max = 4000;
+    config_.x_max = 3000;
     config_.y_min = 1500;
-    config_.y_max = 4000;
+    config_.y_max = 3000;
     config_.pre_samples = 20;
     config_.fly_samples = 64;
     config_.sample_period_us = 0; // width of trigger frame 
