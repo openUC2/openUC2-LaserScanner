@@ -21,9 +21,9 @@ ScannerCore::ScannerCore()
     config_.x_max = 3000;
     config_.y_min = 500;
     config_.y_max = 3000;
-    config_.pre_samples = 16;
-    config_.fly_samples = 16;
-    config_.line_settle_samples = 16;
+    config_.pre_samples = 0;
+    config_.fly_samples = 0;
+    config_.line_settle_samples = 0;
     config_.sample_period_us = 0; // width of trigger frame 
     config_.trig_delay_us = 0; // TODO: not 
     config_.trig_width_us = 0;
@@ -386,6 +386,7 @@ void ScannerCore::scannerTask()
         uint16_t fc = config_.frame_count;
         xSemaphoreGive(config_mutex_);
         
+        vTaskDelay(1); // Yield to allow other tasks to run
         if (fc != 0 && frame_idx_ >= fc) {
             running_ = false;
         }
