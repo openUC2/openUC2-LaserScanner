@@ -6,7 +6,8 @@
 #include "scanner_core.h"
 #include "uart_protocol.h"
 #include "esp_log.h"
-
+#define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
+#include "esp_log.h"
 // Pin configuration for XIAO ESP32-S3 with UC2 Galvo Board
 constexpr spi_host_device_t SPI_HOST = SPI2_HOST;
 constexpr int PIN_SPI_MOSI = 9;   // D8 (GPIO9)
@@ -42,6 +43,9 @@ static void protocol_task_wrapper(void* /*arg*/)
 
 extern "C" void app_main(void)
 {
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    esp_log_level_set("*", ESP_LOG_INFO);
+
     ESP_LOGI(TAG, "ESP32-S3 Galvo Scanner starting...");
 
     // Initialize DAC

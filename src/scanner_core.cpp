@@ -15,21 +15,22 @@ ScannerCore::ScannerCore()
     config_mutex_ = xSemaphoreCreateMutex();
     
     // Set default configuration
-    config_.nx = 256;
-    config_.ny = 256;
-    config_.x_min = 1500;
+    config_.nx = 100;
+    config_.ny = 100;
+    config_.x_min = 500;
     config_.x_max = 3000;
-    config_.y_min = 1500;
+    config_.y_min = 500;
     config_.y_max = 3000;
-    config_.pre_samples = 20;
-    config_.fly_samples = 64;
+    config_.pre_samples = 16;
+    config_.fly_samples = 16;
+    config_.line_settle_samples = 16;
     config_.sample_period_us = 0; // width of trigger frame 
     config_.trig_delay_us = 0; // TODO: not 
     config_.trig_width_us = 0;
-    config_.line_settle_samples = 0;
     config_.enable_trigger = 1;
     config_.apply_x_lut = 0;
     config_.frame_count = 0;
+    config_.bidir = 1;
 }
 
 ScannerCore::~ScannerCore()
@@ -218,6 +219,11 @@ void ScannerCore::buildLineProfile()
     }
 
     line_len_ = (uint16_t)k;
+
+    // print all values in the line_x_ array
+    for (uint32_t i = 0; i < line_len_; ++i) {
+        ESP_LOGI(TAG, "line_x_[%d] = %d", i, line_x_[i]);
+    }
 }
 
 uint16_t ScannerCore::computeY(uint16_t line) const
@@ -316,6 +322,8 @@ void ScannerCore::scannerTask()
             if (cfg.enable_trigger) {
                 triggerPulseLine();
             }
+            bool reverse_line = config_.bidir && (ly & 1);
+
 
             // Compute Y position for this line
             uint16_t y12;
@@ -339,7 +347,10 @@ void ScannerCore::scannerTask()
                 next_t += sp_us;
 
                 // Get X position and apply LUT if enabled
-                uint16_t x12 = line_x_[i];
+                uint32_t idx = reverse_line ? (line_len - 1 - i) : i;
+                uint16_t x12 = line_x_[idx];
+
+                //uint16_t x12 = line_x_[i];
                 if (do_lut) x12 = applyXMap(x12);
 
                 // Update X position via DAC

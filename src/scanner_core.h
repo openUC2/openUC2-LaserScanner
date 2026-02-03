@@ -31,6 +31,7 @@ struct ScanConfig {
     uint8_t  enable_trigger;        // Enable pixel trigger output
     uint8_t  apply_x_lut;           // Apply X lookup table
     uint16_t frame_count;           // Number of frames (0 = continuous)
+    bool    bidir;               // Bidirectional scanning enabled
 };
 #pragma pack(pop)
 
