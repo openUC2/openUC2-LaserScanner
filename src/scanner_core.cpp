@@ -240,15 +240,13 @@ uint16_t ScannerCore::applyXMap(uint16_t x) const
     return x_map_[x & 0x0FFF];
 }
 
-void ScannerCore::triggerPulsePixel(uint16_t dwell_us)
+void ScannerCore::triggerPulsePixel()
 {
     if (trigger_pin_pixel_ < 0) return;
     
-    // Fast GPIO register access for minimal jitter
+    // Minimal pulse width for trigger recognition (~100-200ns)
+    // No delay needed - GPIO operations themselves provide sufficient width
     GPIO.out_w1ts = (1U << trigger_pin_pixel_);
-    if (dwell_us > 0) {
-        esp_rom_delay_us(dwell_us);
-    }
     GPIO.out_w1tc = (1U << trigger_pin_pixel_);
 }
 
@@ -303,25 +301,13 @@ void ScannerCore::scannerTask()
         const uint32_t img_start = cfg.pre_samples;
         const uint32_t img_end = cfg.pre_samples + cfg.nx;
 
-        // ----------------------------------------------------------------------
-        // FRAME TRIGGER - Once at start of frame (like SPIRenderer)
-        // ----------------------------------------------------------------------
-        if (cfg.enable_trigger) {
-            triggerPulseFrame();
-        }
-
         int lineNumber = 0;
 
         // ----------------------------------------------------------------------
-        // X-loop: Scan all lines (Y steps)
+        // Scan all lines (Y steps)
         // ----------------------------------------------------------------------
         for (uint16_t ly = 0; ly < cfg.ny && running_; ++ly) {
             line_idx_ = ly;
-
-            // LINE TRIGGER - Once per line (like SPIRenderer)
-            if (cfg.enable_trigger) {
-                triggerPulseLine();
-            }
             bool reverse_line = config_.bidir && (ly & 1);
 
 
@@ -346,34 +332,74 @@ void ScannerCore::scannerTask()
             for (uint32_t i = 0; i < line_len && running_; ++i) {
                 next_t += sp_us;
 
+                // TIMING CONTROL: Wait until exact time for periodic trigger
+                // This ensures precise timing regardless of processing variations
+                int64_t now;
+                while (true) {
+                    now = esp_timer_get_time();
+                    if (now >= next_t) {
+                        break;
+                    }
+                }
+
+                // Check for timing overrun (loop too slow)
+                int64_t overrun_us = now - next_t;
+                if (overrun_us > (int64_t)sp_us) {
+                    overruns_++;
+                    // Log critical overruns (>10% of period)
+                    if (overruns_ % 100 == 1) {
+                        ESP_LOGW(TAG, "Timing overrun: %lld µs (period: %d µs)", overrun_us, sp_us);
+                    }
+                }
+
+                // PIXEL TRIGGER - Fire at exact periodic interval
+                // Frame, Line, and first Pixel trigger happen simultaneously
+                // Only during imaging region, minimal pulse width
+                if (do_trig && (i >= img_start) && (i < img_end)) {
+                    bool is_first_pixel = (i == img_start);
+                    bool is_first_line = (ly == 0);
+                    
+                    // Synchronize all triggers on first pixel of first line
+                    if (is_first_line && is_first_pixel) {
+                        // All three triggers fire simultaneously
+                        // FRAME
+                        uint32_t trigger_mask = 0;
+                        if (trigger_pin_frame_ >= 0) trigger_mask |= (1U << trigger_pin_frame_);
+                        if (trigger_pin_line_ >= 0) trigger_mask |= (1U << trigger_pin_line_);
+                        if (trigger_pin_pixel_ >= 0) trigger_mask |= (1U << trigger_pin_pixel_);
+                        
+                        GPIO.out_w1ts = trigger_mask;  // Set all at once
+                        GPIO.out_w1tc = trigger_mask;  // Clear all at once
+                    }
+                    else if (is_first_pixel) {
+                        // First pixel of subsequent lines: Line + Pixel trigger
+                        // LINE
+                        uint32_t trigger_mask = 0;
+                        if (trigger_pin_line_ >= 0) trigger_mask |= (1U << trigger_pin_line_);
+                        if (trigger_pin_pixel_ >= 0) trigger_mask |= (1U << trigger_pin_pixel_);
+                        
+                        GPIO.out_w1ts = trigger_mask;
+                        GPIO.out_w1tc = trigger_mask;
+                    }
+                    else {
+                        // Subsequent pixels: Only pixel trigger
+                        // PIXEL
+                        GPIO.out_w1ts = (1U << trigger_pin_pixel_);
+                        GPIO.out_w1tc = (1U << trigger_pin_pixel_);
+                        //triggerPulsePixel();
+                    }
+                }
+
+                // DAC UPDATE: Now we have remaining time budget for processing
                 // Get X position and apply LUT if enabled
                 uint32_t idx = reverse_line ? (line_len - 1 - i) : i;
                 uint16_t x12 = line_x_[idx];
 
-                //uint16_t x12 = line_x_[i];
                 if (do_lut) x12 = applyXMap(x12);
 
                 // Update X position via DAC
                 dac_->setX(x12);
                 dac_->ldacPulse();
-
-                // PIXEL TRIGGER - Only during imaging region (like SPIRenderer)
-                // Use sp_us as dwell time for pixel trigger
-                if (do_trig && (i >= img_start) && (i < img_end)) {
-                    triggerPulsePixel(sp_us);
-                }
-
-                // Timing control - busy wait for precise timing
-                // This is why we unsubscribed from the watchdog
-                while (true) {
-                    int64_t now = esp_timer_get_time();
-                    if (now >= next_t) {
-                        if (now - next_t > (int64_t)sp_us) {
-                            overruns_++;
-                        }
-                        break;
-                    }
-                }
             }
 
             lineNumber++;
